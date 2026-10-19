@@ -1,3 +1,10 @@
+> **DexBench-cosmos-framework**: [NVIDIA/cosmos-framework](https://github.com/NVIDIA/cosmos-framework) at its
+> 2026-10-10 release (`a36f6b0`) plus a Cosmos3-Nano action-policy post-training recipe and HTTP policy server
+> for the DexBench RBY1-M + Wuji 2 embodiment (62 joints, head stereo pair): see
+> [docs/action_policy_dexbench_rby1_wuji2_posttrain.md](docs/action_policy_dexbench_rby1_wuji2_posttrain.md) and
+> [docs/action_policy_dexbench_rby1_wuji2_server.md](docs/action_policy_dexbench_rby1_wuji2_server.md).
+> Everything else below is upstream's README.
+
 <p align="center">
     <img src="https://github.com/user-attachments/assets/28f2d612-bbd6-44a3-8795-833d05e9f05f" width="274" alt="NVIDIA Cosmos"/>
 </p>

@@ -58,6 +58,10 @@ EMBODIMENT_TO_DOMAIN_ID: dict[str, int] = {
     # "embodiment_b" (domain 9, an earlier unrelated sample drop with its own 30D
     # contract).
     "embodiment_b_20260828": 32,
+    # DexBench RBY1-M + Wuji 2 hands (62D absolute joint_pos: arms 14, head 2, hands 40,
+    # torso 6). Above the maximum, so recipes that use it raise num_embodiment_domains to 34;
+    # the domain-aware action projections are freshly initialised either way.
+    "dexbench_rby1_wuji2": 33,
 }
 
 
@@ -93,6 +97,7 @@ EMBODIMENT_TO_RAW_ACTION_DIM: dict[str, int] = {
     "geniesim3_g2a": 29,
     "geniesim3_g2a_joint": 16,
     "embodiment_b_20260828": 50,
+    "dexbench_rby1_wuji2": 62,  # left_arm 7, right_arm 7, head 2, hands 40, torso 6
     # NOTE: ``libero`` (7/10/13 depending on ``rotation_space``), ``hand_pose``
     # (variable with ``keypoint_option`` and ``rotation_format``) and ``robocasa``
     # (10 arm-only, 15/20 with the mobile base, per ``use_base_action`` /

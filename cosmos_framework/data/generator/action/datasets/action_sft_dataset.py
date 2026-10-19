@@ -19,6 +19,9 @@ from typing import Any
 
 from torch.utils.data import Dataset, IterableDataset, get_worker_info
 
+from cosmos_framework.data.generator.action.datasets.dexbench_rby1_wuji2_lerobot_dataset import (
+    DexBenchRby1Wuji2LeRobotDataset,
+)
 from cosmos_framework.data.generator.action.datasets.droid_lerobot_dataset import DROIDLeRobotDataset
 from cosmos_framework.data.generator.action.datasets.droid_merged_lerobot_dataset import DROIDMergedLeRobotDataset
 from cosmos_framework.data.generator.action.datasets.libero_lerobot_dataset import LIBEROLeRobotDataset
@@ -301,6 +304,71 @@ def get_action_robocasa_sft_dataset(
     if iterable_shuffle:
         return ActionIterableShuffleDataset(sft, seed=episode_shuffle_seed)
     return sft
+
+def get_action_dexbench_rby1_wuji2_sft_dataset(
+    *,
+    root: str | list[str],
+    fps: float = 30.0,
+    chunk_length: int = 32,
+    mode: str = "wam",
+    viewpoint: str = "concat_view",
+    camera_set: str = "stereo_stack",
+    stereo_gap: int = 0,
+    use_state: bool = True,
+    action_normalization: str | None = "quantile",
+    action_stats_path: str | None = None,
+    split: str = "train",
+    split_val_ratio: float = 0.0,
+    split_seed: int = 42,
+    resolution: str | int = "256",
+    max_action_dim: int = 64,
+    tokenizer_config: dict | None = None,
+    cfg_dropout_rate: float = 0.1,
+    append_viewpoint_info: bool = True,
+    append_duration_fps_timestamps: bool = True,
+    append_resolution_info: bool = True,
+    append_idle_frames: bool = False,
+    format_prompt_as_json: bool = True,
+    iterable_shuffle: bool = False,
+    episode_shuffle_seed: int = 42,
+) -> Dataset:
+    """Build the DexBench RBY1-M + Wuji 2 action-policy SFT dataset.
+
+    Feeds ``DexBenchRby1Wuji2LeRobotDataset`` (62-D absolute joint actions with the current
+    joint state as a clean conditioning row, stereo head cameras stacked vertically) through
+    ``ActionTransformPipeline``. ``root`` is one LeRobot v3.0 dataset root or a list of them.
+    Idle-frame captions are off: the base idle detector handles frame-wise deltas only.
+    """
+    dataset: Dataset = DexBenchRby1Wuji2LeRobotDataset(
+        root=root,
+        fps=fps,
+        chunk_length=chunk_length,
+        mode=mode,
+        viewpoint=viewpoint,
+        camera_set=camera_set,
+        stereo_gap=stereo_gap,
+        use_state=use_state,
+        action_normalization=action_normalization,
+        action_stats_path=action_stats_path,
+        split=split,
+        split_val_ratio=split_val_ratio,
+        split_seed=split_seed,
+    )
+    transform = ActionTransformPipeline(
+        tokenizer_config=tokenizer_config,
+        cfg_dropout_rate=cfg_dropout_rate,
+        max_action_dim=max_action_dim,
+        append_viewpoint_info=append_viewpoint_info,
+        append_duration_fps_timestamps=append_duration_fps_timestamps,
+        append_resolution_info=append_resolution_info,
+        append_idle_frames=append_idle_frames,
+        format_prompt_as_json=format_prompt_as_json,
+    )
+    sft = ActionSFTDataset(dataset, transform, resolution)
+    if iterable_shuffle:
+        return ActionIterableShuffleDataset(sft, seed=episode_shuffle_seed)
+    return sft
+
 
 def get_action_libero_sft_dataset(
     *,

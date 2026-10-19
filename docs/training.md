@@ -166,16 +166,19 @@ python -m cosmos_framework.scripts.reasoner.prepare_videophy2_from_hf \
 
 </details>
 
-<details><summary><b>Action-Policy Post-Training (DROID / LIBERO)</b></summary>
+<details><summary><b>Action-Policy Post-Training (DROID / LIBERO / DexBench)</b></summary>
 
-Robot action-policy recipes: DROID (`joint_pos` 8-D actions + proprioceptive state) and
-LIBERO (`frame_wise_relative` rot6d 10-D actions), both from Cosmos3-Nano. They follow the same Step 2/Step 3 flow below, with their own data staging
+Robot action-policy recipes: DROID (`joint_pos` 8-D actions + proprioceptive state),
+LIBERO (`frame_wise_relative` rot6d 10-D actions) and DexBench RBY1-M + Wuji 2 (62-D absolute
+joints + state, head stereo pair), all from Cosmos3-Nano. They follow the same Step 2/Step 3 flow below, with their own data staging
 (DROID keep-ranges window filter, LIBERO suite selection), and are documented separately:
 
 - [DROID action policy](./action_policy_droid_posttrain.md) —
   `examples/launch_sft_action_policy_droid_nano.sh`
 - [LIBERO action policy](./action_policy_libero_posttrain.md) —
   `examples/launch_sft_action_policy_libero_10_nano.sh` / `examples/launch_sft_action_policy_libero_all_nano.sh`
+- [DexBench RBY1-M + Wuji 2 action policy](./action_policy_dexbench_rby1_wuji2_posttrain.md) —
+  `examples/launch_sft_action_policy_dexbench_rby1_wuji2_nano.sh`
 
 </details>
 

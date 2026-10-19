@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: OpenMDW-1.1
+
+# DexBench RBY1-M + Wuji 2 action-policy SFT run config for the
+# `action_policy_dexbench_rby1_wuji2_nano` experiment (256 tier): one 8-GPU node (FSDP shard 8),
+# global batch = max_samples 16 x 8 ranks x grad_accum 2 = 256. On 8x H100 an iteration takes
+# 4.3 s, so 4000 iterations with four saves took 5 h 16 min; that is 1.0M samples, about 11
+# passes over a 240-episode (~90k-frame) E2 lift_to_conveyor Mimic set. LR and schedule follow
+# the LIBERO recipe; none of these numbers is tuned for this data.
+#
+# Env required:
+#   DEXBENCH_COSMOS3_DATASET=<LeRobot v3.0 root, 62-D, 256x144 stereo>
+#   BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir>
+#   WAN_VAE_PATH=<Wan2.2_VAE.pth>
+#   IMAGINAIRE_OUTPUT_ROOT=<output root>
+
+[job]
+task         = "vfm"
+experiment   = "action_policy_dexbench_rby1_wuji2_nano"
+project      = "cosmos3_action_dexbench"
+group        = "action_sft"
+name         = "action_policy_dexbench_rby1_wuji2_nano"
+wandb_mode   = "online"
+
+[model]
+precision = "bfloat16"
+max_num_tokens_after_packing = 74000
+
+[model.parallelism]
+data_parallel_shard_degree     = 8
+data_parallel_replicate_degree = 1
+
+[model.activation_checkpointing]
+mode           = "selective"
+save_ops_regex = ["fmha"]
+
+[model.tokenizer]
+vae_path = "${oc.env:WAN_VAE_PATH}"
+
+[optimizer]
+lr = 5.0e-05
+
+[scheduler]
+cycle_lengths = [16000]
+warm_up_steps = [500]
+
+[dataloader_train]
+max_samples_per_batch = 16
+
+[trainer]
+max_iter        = 4000
+logging_iter    = 50
+grad_accum_iter = 2
+
+[checkpoint]
+load_path = "${oc.env:BASE_CHECKPOINT_PATH}"
+save_iter = 1000    # one Nano save (model + optimizer) is ~166 GB
