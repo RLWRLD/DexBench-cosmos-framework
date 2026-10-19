@@ -55,14 +55,14 @@ python -m cosmos_framework.scripts.action_policy_server_dexbench \
   of `cosmos_framework.scripts.export_model`; `--config-file` is the run's `config.yaml` either way.
 - `--api-token-file`: every request must carry `Authorization: Bearer <token>`. The server binds
   `--host` (default `127.0.0.1`); keep it off `0.0.0.0` unless the port is firewalled.
-- `--num-steps` (default 10) denoising steps per chunk; `--seed` is the base seed (a request
+- `--num-steps` (default 4) denoising steps per chunk; `--seed` is the base seed (a request
   without `seed` uses `seed + request number`).
-- `--shift` (default 5, `generate_samples_from_batch`'s default) is the sampler shift. Training at
-  the 256 tier uses `NANO_MODEL_CONFIG`'s shift of 3; on 64 training windows of a 256-tier run,
-  shift 5 predicted the recorded actions slightly better than 3 on every joint group.
+- `--shift` (default 5) is the sampler shift. The recipe trains at shift 3; at 10 steps on 64
+  training windows, shift 5 predicted the recorded actions slightly better than 3 on every joint
+  group, and 4 steps at shift 5 matched 10 steps there (mean left-arm error 0.0150 vs 0.0153 rad).
 
-Loading takes about 4 min. On an H100 a chunk takes about 0.45 s at 10 steps, and the server peaks
-at about 32 GiB of GPU memory.
+Loading takes about 4 min. On an H100 a chunk takes about 0.25 s at 4 steps (0.45 s at 10), and
+the server peaks at about 32 GiB of GPU memory.
 
 ### Endpoints
 

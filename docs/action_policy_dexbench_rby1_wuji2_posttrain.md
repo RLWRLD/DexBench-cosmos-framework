@@ -60,6 +60,7 @@ external and must be provided per environment:
 | resolution   | `256`: both cameras at `256×144`, stacked left over right with a 32-row band (`stereo_gap=32`) into the `256×320` 3:4 canvas |
 | viewpoint    | `concat_view`, `camera_set=stereo_stack`                                                                                     |
 | rate / chunk | native 30 Hz, chunk `32` (tokenizer `encode_exact_durations=[33]`)                                                           |
+| rf shift     | training `3`; the policy server samples at `5` with 4 denoising steps                                                        |
 | domain       | `dexbench_rby1_wuji2` = 33 (`num_embodiment_domains=34`; the action projections train from scratch)                          |
 | lr           | `5e-5`, 500 warm-up iterations, `LambdaLinear` cycle 16000                                                                   |
 | global batch | `256` = `max_samples_per_batch` 16 × 8 ranks × `grad_accum_iter` 2                                                           |

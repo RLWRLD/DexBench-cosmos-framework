@@ -158,11 +158,11 @@ class DexBenchServerArgs(pydantic.BaseModel):
     observation does not return the same chunk forever."""
     guidance: float = 1.0
     """Guidance scale; 1.0 runs one forward per step (no classifier-free guidance)."""
-    num_steps: int = 10
+    num_steps: int = 4
     """Denoising steps per chunk."""
     shift: float = 5.0
-    """UniPC sampler shift, generate_samples_from_batch's default. Training picks its shift by
-    resolution tier (NANO_MODEL_CONFIG: 256 -> 3, 480 -> 5), so a 256-tier run may be served at 3."""
+    """UniPC sampler shift. The recipe trains at shift 3; at 10 steps, sampling at 5 matched the recorded
+    actions of 64 training windows slightly better than 3."""
 
     host: str = "127.0.0.1"
     """Bind address. Keep it off 0.0.0.0 unless the port is firewalled; pair with --api-token-file."""

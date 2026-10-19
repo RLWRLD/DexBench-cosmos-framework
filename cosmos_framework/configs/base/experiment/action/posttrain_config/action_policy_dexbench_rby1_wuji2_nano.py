@@ -12,8 +12,10 @@ share one quantile normalizer pooled over both columns.
 
 Observation is the head stereo pair at 256x144 per camera, stacked vertically with a 32-row
 black band between the eyes (``stereo_gap=32``) into 256x320, the 256 tier's 3:4 canvas, so
-neither camera is resized or padded (about 720 vision tokens per sample; the tier trains at
-``NANO_MODEL_CONFIG``'s shift of 3). The new ``dexbench_rby1_wuji2`` domain id is 33,
+neither camera is resized or padded (about 720 vision tokens per sample). Training uses a
+rectified-flow shift of 3, the 256 tier's value in ``NANO_MODEL_CONFIG``, set here as a plain int;
+the policy server samples at 4 denoising steps with shift 5 by default
+(``action_policy_server_dexbench``). The new ``dexbench_rby1_wuji2`` domain id is 33,
 above the released model's 32 domains, so ``num_embodiment_domains`` is raised to 34; the
 domain-aware ``action2llm``/``llm2action`` projections are skipped on load and train from scratch.
 
@@ -48,6 +50,8 @@ def _dexbench_rby1_wuji2_model_config() -> dict:
     cfg["diffusion_expert_config"]["load_weights_from_pretrained"] = False
     cfg["rectified_flow_training_config"]["loss_scale"] = 10.0
     cfg["rectified_flow_training_config"]["image_loss_scale"] = None
+    # NANO_MODEL_CONFIG's per-resolution dict gives 3 at the 256 tier too; an int states it outright.
+    cfg["rectified_flow_training_config"]["shift"] = 3
     # chunk_length=32 -> 33 observation frames; pin the VAE encode duration to match.
     cfg["tokenizer"]["encode_exact_durations"] = [33]
     # dexbench_rby1_wuji2 is domain 33 (domain_utils); ids must be < num_embodiment_domains.
