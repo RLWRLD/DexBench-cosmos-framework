@@ -42,7 +42,7 @@ import glob
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -156,13 +156,18 @@ def compute_joint_quantile_stats(roots: list[str]) -> dict[str, np.ndarray]:
     }
 
 
-def build_policy_contract(roots: list[str]) -> dict[str, Any]:
+def build_policy_contract(roots: list[str], narrow_joints: Literal["refuse", "widen"] = "refuse") -> dict[str, Any]:
     """What a policy server needs from the training data, in one JSON-ready dict.
 
     The pooled statistics sit at the top level, so ``load_action_stats`` reads the same file the
     server denormalizes with; ``contract`` carries the joint order, frame size, rate and task
     strings of ``roots``. Writing this when a run is submitted pins the normalizer to the data the
     run trained on, instead of recomputing it later from whatever the root then holds.
+
+    A joint whose q01..q99 half-range is under ``_MIN_QUANTILE_HALF_RANGE`` makes the dataset refuse
+    to train (``narrow_joints="refuse"``, the default). ``"widen"`` keeps its centre and sets its
+    half-range to ``_MIN_QUANTILE_HALF_RANGE`` or, if larger, its furthest min/max from the centre,
+    so no recorded value normalizes beyond +-1; ``normalization_adjustment.half_range_rad`` records it.
     """
     names = frame_hw = fps = None
     tasks: list[str] = []
@@ -181,6 +186,15 @@ def build_policy_contract(roots: list[str]) -> dict[str, Any]:
             if task not in tasks:
                 tasks.append(str(task))
     stats = compute_joint_quantile_stats(roots)
+    adjusted = {}
+    if narrow_joints == "widen":
+        centre = (stats["q01"] + stats["q99"]) / 2
+        reach = np.maximum(np.abs(stats["min"] - centre), np.abs(stats["max"] - centre))
+        for i in np.flatnonzero((stats["q99"] - stats["q01"]) / 2 < _MIN_QUANTILE_HALF_RANGE):
+            half = adjusted[names[i]] = max(_MIN_QUANTILE_HALF_RANGE, float(reach[i]))
+            # Rounded outwards in float32, the precision the dataset normalizes in.
+            stats["q01"][i] = np.nextafter(np.float32(centre[i] - half), np.float32(-np.inf))
+            stats["q99"][i] = np.nextafter(np.float32(centre[i] + half), np.float32(np.inf))
     return {
         **{key: value.tolist() for key, value in stats.items()},
         "contract": {
@@ -192,6 +206,7 @@ def build_policy_contract(roots: list[str]) -> dict[str, Any]:
             "tasks": tasks,
             "statistics": "q01/q99/mean/std/min/max pooled over action and observation.state",
         },
+        **({"normalization_adjustment": {"half_range_rad": adjusted}} if adjusted else {}),
     }
 
 

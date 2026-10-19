@@ -18,7 +18,7 @@ Usage
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import tyro
 
@@ -36,6 +36,10 @@ def main(
         list[Path] | None,
         tyro.conf.arg(help="LeRobot v3.0 roots to read instead of the ones config.yaml names."),
     ] = None,
+    narrow_joints: Annotated[
+        Literal["refuse", "widen"],
+        tyro.conf.arg(help="Joints with a q01..q99 half-range under 1e-3: leave them (training refuses) or widen."),
+    ] = "refuse",
 ) -> None:
     """Write policy_contract.json for a DexBench RBY1-M + Wuji 2 run."""
     if dataset_root:
@@ -43,7 +47,7 @@ def main(
     else:
         root = find_dataset_node(deserialize_config_dict(config_file))["root"]
         roots = [root] if isinstance(root, str) else list(root)
-    contract = build_policy_contract(roots)
+    contract = build_policy_contract(roots, narrow_joints)
     output.parent.mkdir(parents=True, exist_ok=True)
     partial = output.with_name(output.name + ".partial")
     partial.write_text(json.dumps(contract, indent=1) + "\n")
