@@ -37,14 +37,14 @@ experiment, the `DexBenchRby1Wuji2LeRobotDataset` dataset class with the recipe 
 (`use_state`, `stereo_stack`, `stereo_gap`) and the `dexbench_rby1_wuji2` domain. Two inputs are
 external and must be provided per environment:
 
-1. **DexBench dataset (in LeRobotDataset v3.0 format)** — one root with `action` and
+1. **DexBench dataset (in LeRobotDataset v3.0 format)** — one or more roots with `action` and
    `observation.state` as the 62 joint positions in the order
    `left_arm(7), right_arm(7), head(2), hands(40), torso(6)`, the head stereo pair as
    `observation.images.camera_ego_left` / `camera_ego_right` at `256×144`, recorded at 30 Hz. The
    DexBench-Arena repository produces it from a 66-joint RRC LeRobot v2.1 export with
    `scripts/training/relayout_lerobot_62d_320x180.py --size 256x144` (joints selected by name,
    frames area-downscaled) and `scripts/training/convert_lerobot_v21_to_v30.py`. Point
-   `DEXBENCH_COSMOS3_DATASET` at the v3.0 root.
+   `DEXBENCH_COSMOS3_DATASET` at the v3.0 root, or at several roots separated by spaces.
 2. **DCP base checkpoint** — convert [Cosmos3-Nano](https://huggingface.co/nvidia/Cosmos3-Nano) to DCP and point
    `BASE_CHECKPOINT_PATH` at it (see [Full Reproduction](#full-reproduction)). Action heads are
    not loaded from it (they init fresh).
@@ -91,6 +91,15 @@ export NPROC_PER_NODE=8
 export EXTRA_TAIL_OVERRIDES="job.name=<run-name>"
 bash examples/launch_sft_action_policy_dexbench_rby1_wuji2_nano.sh
 ```
+
+Before training, the launcher writes the run's policy contract from the dataset roots and trains
+with it (`action_stats_path`), so the trainer and the policy server normalize with the same file:
+
+- `POLICY_CONTRACT` — where it goes; default
+  `$OUTPUT_ROOT/cosmos3_action_dexbench/action_sft/<job.name>/policy_contract.json`, next to the
+  run's `config.yaml`.
+- `DEXBENCH_NARROW_JOINTS` — `refuse` (default) stops on a joint whose q01..q99 half-range is
+  under 1e-3; `widen` widens such a joint's range instead and records it in the contract.
 
 The recipe TOML ([`action_policy_dexbench_rby1_wuji2_nano.toml`](../examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml)) sets the scalar
 knobs (`max_iter`, `save_iter`, `grad_accum_iter`, parallelism, wandb); the dataset/action knobs
