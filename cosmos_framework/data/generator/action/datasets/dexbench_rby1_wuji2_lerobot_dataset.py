@@ -158,8 +158,14 @@ def relative_joint_mask(slices: JointSlices) -> torch.Tensor:
 
 def _stats_of(values: np.ndarray) -> dict[str, np.ndarray]:
     q01, q99 = np.quantile(values, [0.01, 0.99], axis=0)
-    return {"q01": q01, "q99": q99, "mean": values.mean(0), "std": values.std(0),
-            "min": values.min(0), "max": values.max(0)}
+    return {
+        "q01": q01,
+        "q99": q99,
+        "mean": values.mean(0),
+        "std": values.std(0),
+        "min": values.min(0),
+        "max": values.max(0),
+    }
 
 
 def _episode_arrays(root: str):
@@ -271,6 +277,27 @@ def representation(slices: JointSlices) -> dict[str, Any]:
         "reference": "observation.state at the window's first frame (the conditioning row)",
         "absolute_elsewhere": True,
     }
+
+
+def representation_mismatch(stated: dict[str, Any] | None, slices: JointSlices) -> str | None:
+    """Why a contract stating ``stated`` does not fit a run of ``relative_joint_slices=slices``, or None.
+
+    Compares ``type`` and the relative slices only, as DexBench-Arena's ``representation_mismatch`` does,
+    so rewording the descriptive fields keeps existing contracts valid. No ``representation`` is absolute.
+    """
+    stated = stated or {"type": "absolute"}
+    if stated.get("type") not in ("absolute", "relative_joints"):
+        return f"unknown action representation {stated!r}"
+    stated_slices = stated.get("relative_joint_slices") if stated["type"] == "relative_joints" else None
+    found = [[int(a), int(b)] for a, b in stated_slices or ()]
+    expected = [[int(a), int(b)] for a, b in slices or ()]
+    if found == expected:
+        return None
+
+    def name(s: list[list[int]]) -> str:
+        return f"relative_joints {s}" if s else "absolute"
+
+    return f"states {name(found)} actions, the run is configured for {name(expected)}"
 
 
 def build_policy_contract(
@@ -469,11 +496,9 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         """The action rows' statistics: ``action_rows`` of ``action_stats_path``, else computed."""
         if self._action_stats_path:
             contract = json.loads(Path(self._action_stats_path).read_text())
-            if contract.get("representation") != representation(self._relative_joint_slices):
-                raise ValueError(
-                    f"{self._action_stats_path} states representation {contract.get('representation')}, the dataset "
-                    f"is configured with {representation(self._relative_joint_slices)}"
-                )
+            problem = representation_mismatch(contract.get("representation"), self._relative_joint_slices)
+            if problem:
+                raise ValueError(f"{self._action_stats_path} {problem}")
             raw, source = contract["action_rows"], f"{self._action_stats_path} action_rows"
         else:
             pooled = compute_joint_quantile_stats(self._roots)

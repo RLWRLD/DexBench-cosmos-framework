@@ -73,6 +73,7 @@ from cosmos_framework.data.generator.action.datasets.dexbench_rby1_wuji2_lerobot
     find_dataset_node,
     relative_joint_mask,
     representation,
+    representation_mismatch,
     stack_stereo,
 )
 from cosmos_framework.data.generator.action.utils.action_processing import (
@@ -200,15 +201,15 @@ class DexBenchRequestBuilder:
         # representation; action rows denormalize with its action_rows block and get the state added back.
         slices = self.settings["relative_joint_slices"]
         self.representation = representation(slices)
-        if contract_file.get("representation", {"type": "absolute"}) != self.representation:
-            raise ValueError(
-                f"{contract_path} states representation {contract_file.get('representation')}, the run's config "
-                f"trains {self.representation}"
-            )
+        problem = representation_mismatch(contract_file.get("representation"), slices)
+        if problem:
+            raise ValueError(f"{contract_path} {problem}")
         self.relative_mask = relative_joint_mask(slices)
         if slices:
-            rows = {k: torch.as_tensor(np.asarray(contract_file["action_rows"][k]), dtype=torch.float32)
-                    for k in ("q01", "q99", "mean", "std", "min", "max")}
+            rows = {
+                k: torch.as_tensor(np.asarray(contract_file["action_rows"][k]), dtype=torch.float32)
+                for k in ("q01", "q99", "mean", "std", "min", "max")
+            }
             self.normalizer = StateActionRowNormalizer(
                 self.normalizer, resolve_action_normalization(self.settings["action_normalization"], rows)
             )
@@ -307,8 +308,10 @@ class DexBenchPolicyService:
         self.token = args.api_token_file.read_text().strip() if args.api_token_file else None
         self._lock = threading.Lock()
         self._requests = 0
-        log.info(f"[dexbench-server] dataset settings {self.builder.settings}; frames {self.builder.frame_hw}; "
-                 f"domain {self.builder.domain_id}")
+        log.info(
+            f"[dexbench-server] dataset settings {self.builder.settings}; frames {self.builder.frame_hw}; "
+            f"domain {self.builder.domain_id}"
+        )
 
     def info(self) -> dict[str, Any]:
         b = self.builder
@@ -366,17 +369,27 @@ class DexBenchPolicyService:
         pred = out["action"][0].float().reshape(-1, out["action"][0].shape[-1])[:, :ACTION_DIM].cpu()  # [T,62]
         pred = self.builder.to_absolute(pred, sample["state"])  # [T,62] radians, absolute targets
         if pred.shape[0] != self.builder.chunk + 1 or not torch.isfinite(pred).all():
-            raise RuntimeError(f"model returned {tuple(pred.shape)} actions, expected {self.builder.chunk + 1} finite rows")
+            raise RuntimeError(
+                f"model returned {tuple(pred.shape)} actions, expected {self.builder.chunk + 1} finite rows"
+            )
         echo = float((pred[0] - sample["state"]).abs().max())
         chunk = pred[1:]
         if self.args.dump_dir is not None:
             dump = self.args.dump_dir / f"req{request_id:06d}"
             dump.mkdir(parents=True, exist_ok=True)
             Image.fromarray(sample["stacked_frame"].permute(1, 2, 0).numpy()).save(dump / "frame.png")
-            (dump / "io.json").write_text(json.dumps({
-                "prompt": req["prompt"], "caption": sample["ai_caption"], "seed": seed,
-                "state": sample["state"].tolist(), "action": chunk.tolist(), "state_echo_error": echo,
-            }))
+            (dump / "io.json").write_text(
+                json.dumps(
+                    {
+                        "prompt": req["prompt"],
+                        "caption": sample["ai_caption"],
+                        "seed": seed,
+                        "state": sample["state"].tolist(),
+                        "action": chunk.tolist(),
+                        "state_echo_error": echo,
+                    }
+                )
+            )
         result = {
             "action": chunk.tolist(),
             "state_echo_error": echo,
@@ -385,8 +398,10 @@ class DexBenchPolicyService:
             "ms_prep": (t1 - t0) * 1e3,
             "ms_infer": (t2 - t1) * 1e3,
         }
-        log.info(f"[dexbench-server] request {request_id} seed {seed} prep {result['ms_prep']:.0f} ms "
-                 f"infer {result['ms_infer']:.0f} ms echo {echo:.4f} rad")
+        log.info(
+            f"[dexbench-server] request {request_id} seed {seed} prep {result['ms_prep']:.0f} ms "
+            f"infer {result['ms_infer']:.0f} ms echo {echo:.4f} rad"
+        )
         return result
 
 
@@ -445,8 +460,10 @@ def main() -> None:
     service = DexBenchPolicyService(args)
     httpd = ThreadingHTTPServer((args.host, int(args.port)), _Handler)
     setattr(httpd, "service", service)
-    log.info(f"[dexbench-server] serving http://{args.host}:{args.port} (node {get_local_ip()}); "
-             f"token {'required' if service.token else 'off'}")
+    log.info(
+        f"[dexbench-server] serving http://{args.host}:{args.port} (node {get_local_ip()}); "
+        f"token {'required' if service.token else 'off'}"
+    )
     httpd.serve_forever()
 
 
