@@ -331,6 +331,7 @@ def get_action_dexbench_rby1_wuji2_sft_dataset(
     format_prompt_as_json: bool = True,
     iterable_shuffle: bool = False,
     episode_shuffle_seed: int = 42,
+    relative_joint_slices: list[list[int]] | None = None,
 ) -> Dataset:
     """Build the DexBench RBY1-M + Wuji 2 action-policy SFT dataset.
 
@@ -338,6 +339,8 @@ def get_action_dexbench_rby1_wuji2_sft_dataset(
     joint state as a clean conditioning row, stereo head cameras stacked vertically) through
     ``ActionTransformPipeline``. ``root`` is one LeRobot v3.0 dataset root or a list of them.
     Idle-frame captions are off: the base idle detector handles frame-wise deltas only.
+    ``relative_joint_slices`` (e.g. ``[[0, 14]]`` for both arms) trains those columns' actions relative
+    to the window's first state; see ``DexBenchRby1Wuji2LeRobotDataset``.
     """
     dataset: Dataset = DexBenchRby1Wuji2LeRobotDataset(
         root=root,
@@ -353,6 +356,7 @@ def get_action_dexbench_rby1_wuji2_sft_dataset(
         split=split,
         split_val_ratio=split_val_ratio,
         split_seed=split_seed,
+        relative_joint_slices=relative_joint_slices,
     )
     transform = ActionTransformPipeline(
         tokenizer_config=tokenizer_config,

@@ -31,7 +31,8 @@ The server normalizes the state and denormalizes the predicted chunk with the ru
 of the data. The launcher writes it to the run's job directory (next to `config.yaml`) before
 training and trains with it (`action_stats_path`). To write it again later, from the run's saved
 `config.yaml`, which names the dataset roots the run trained on (`--dataset-root` replaces them if
-that data has moved), pass the `--narrow-joints` the run used (`DEXBENCH_NARROW_JOINTS`):
+that data has moved), pass the `--narrow-joints` the run used (`DEXBENCH_NARROW_JOINTS`) and, for
+an arm-relative run, its `--relative-joint-slices` (`DEXBENCH_RELATIVE_JOINT_SLICES`):
 
 ```shell
 python -m cosmos_framework.scripts.write_dexbench_policy_contract \
@@ -70,8 +71,11 @@ the server peaks at about 32 GiB of GPU memory.
 
 All JSON:
 
-- `GET /info`: the joint names, frame size (`frame_hw`), `stereo_gap`, rate, horizon, prompts and
-  sampling settings, for a client to bind joints by name and resize its frames.
+- `GET /info`: the joint names, frame size (`frame_hw`), `stereo_gap`, rate, horizon, prompts,
+  sampling settings and `action_representation`, for a client to bind joints by name, resize its
+  frames and refuse a checkpoint trained with another representation. `action_representation` is
+  `{"type": "absolute"}`, or `{"type": "relative_joints", "relative_joint_slices": [[0, 14]], ...}`
+  for a run trained with arm-relative actions; `action` is absolute joint targets either way.
 - `POST /predict`:
   `{"images": {"left": <b64 PNG>, "right": <b64 PNG>}, "state": [62 floats], "prompt": str, "seed": int (optional)}`
   → `{"action": [[62 floats] × 32], "state_echo_error": float, "seed": int, "ms_infer": float, ...}`.

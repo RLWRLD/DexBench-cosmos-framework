@@ -22,6 +22,16 @@ prepended to the ``chunk_length`` future actions as a clean conditioning row (sa
 joint space), so the model sees ``[chunk_length + 1, 62]``. Because state and actions share one
 normalizer, the default quantile statistics are pooled over both columns.
 
+``relative_joint_slices`` (default ``None``: every action absolute) makes the listed joint columns
+relative, as GR00T N1.7's arm-relative modality does: ``[[0, 14]]`` turns both arms' action rows into
+``action - state`` with the state of the window's first frame (the conditioning row), while hands, head
+and torso stay absolute. The state row stays absolute. The two kinds of row then normalize with their
+own statistics (``StateActionRowNormalizer``): the state row with the pooled absolute ones, the action
+rows with ``action_rows`` -- the pooled arm deltas on the relative columns and the absolute statistics on
+the rest -- which ``build_policy_contract`` writes beside them. The policy server reads the same setting
+from the run's config, denormalizes the generated rows with ``action_rows`` and adds the request's state
+back on the relative columns, so a client still receives absolute joint targets.
+
 ``camera_set`` selects the observation:
 
 * ``"stereo_stack"`` (default) -- left over right, full width: ``[T, C, 2H + stereo_gap, W]``;
@@ -55,7 +65,10 @@ from cosmos_framework.data.generator.action.datasets.cosmos3_action_lerobot impo
     Joint,
     build_action_spec,
 )
-from cosmos_framework.data.generator.action.utils.action_processing import load_action_stats
+from cosmos_framework.data.generator.action.utils.action_processing import (
+    load_action_stats,
+    resolve_action_normalization,
+)
 from cosmos_framework.data.generator.action.utils.viewpoint_utils import Viewpoint
 from cosmos_framework.utils import log
 
@@ -88,6 +101,9 @@ VIEW_DESCRIPTIONS = {
 # A joint whose pooled q01..q99 half-range is below this would be scaled by ~1/0 under quantile
 # normalization; refuse rather than train on exploding values.
 _MIN_QUANTILE_HALF_RANGE = 1e-3
+# The chunk length of the action rows of a contract written before it recorded one: the writer's default,
+# which the launcher did not override.
+_UNRECORDED_CHUNK_LENGTH = 32
 
 
 def stack_stereo(left: torch.Tensor, right: torch.Tensor, gap: int = 0) -> torch.Tensor:
@@ -128,6 +144,101 @@ def find_dataset_node(config: dict) -> dict:
     return found[0]
 
 
+JointSlices = list[list[int]] | None
+"""``[[start, stop], ...]`` column ranges of the 62-joint contract whose actions are relative."""
+
+
+def relative_joint_mask(slices: JointSlices) -> torch.Tensor:
+    """``[62]`` bool mask of the relative columns; all False for ``None``."""
+    mask = torch.zeros(ACTION_DIM, dtype=torch.bool)
+    for item in slices or []:
+        start, stop = (int(v) for v in item)
+        if not 0 <= start < stop <= ACTION_DIM:
+            raise ValueError(f"relative_joint_slices entry {item!r} is not a column range within [0, {ACTION_DIM}]")
+        mask[start:stop] = True
+    return mask
+
+
+def _stats_of(values: np.ndarray) -> dict[str, np.ndarray]:
+    q01, q99 = np.quantile(values, [0.01, 0.99], axis=0)
+    return {
+        "q01": q01,
+        "q99": q99,
+        "mean": values.mean(0),
+        "std": values.std(0),
+        "min": values.min(0),
+        "max": values.max(0),
+    }
+
+
+def _episode_arrays(root: str):
+    """``(action, state)`` ``[L, 62]`` float64 arrays per episode of a LeRobot v3.0 root."""
+    files = sorted(glob.glob(os.path.join(root, "data", "*", "*.parquet")))
+    if not files:
+        raise FileNotFoundError(f"no data/*/*.parquet under {root!r}")
+    for path in files:
+        table = pq.read_table(path, columns=[_ACTION_FEATURE, _STATE_FEATURE, "episode_index", "frame_index"])
+        episodes = np.asarray(table.column("episode_index").to_numpy())
+        frames = np.asarray(table.column("frame_index").to_numpy())
+        action = np.stack(table.column(_ACTION_FEATURE).to_numpy(zero_copy_only=False)).astype(np.float64)
+        state = np.stack(table.column(_STATE_FEATURE).to_numpy(zero_copy_only=False)).astype(np.float64)
+        for episode in np.unique(episodes):
+            rows = np.flatnonzero(episodes == episode)
+            rows = rows[np.argsort(frames[rows], kind="stable")]
+            yield action[rows], state[rows]
+
+
+def compute_relative_action_stats(roots: list[str], slices: JointSlices, chunk_length: int) -> dict[str, np.ndarray]:
+    """Statistics of ``action[t + k] - state[t]`` on the relative columns, over every training window.
+
+    A window starts at frame ``t`` of an episode of ``L`` frames for ``0 <= t < L - chunk_length``
+    (``build_episode_spans``) and holds the actions of frames ``t .. t + chunk_length - 1``; every
+    ``(t, k)`` pair contributes one delta. Returns ``{q01, q99, mean, std, min, max}`` of shape
+    ``[n_relative_columns]`` in column order.
+    """
+    mask = relative_joint_mask(slices).numpy()
+    deltas = []
+    for root in roots:
+        for action, state in _episode_arrays(root):
+            starts = len(action) - chunk_length
+            if starts <= 0:
+                continue
+            ref = state[:starts, mask]  # [S, R]
+            for k in range(chunk_length):
+                deltas.append(action[k : k + starts, mask] - ref)
+    values = np.concatenate(deltas, axis=0)
+    if not np.isfinite(values).all():
+        raise ValueError("non-finite relative actions")
+    return _stats_of(values)
+
+
+class StateActionRowNormalizer:
+    """Row 0 of a ``[T, D]`` window (the absolute state) with ``state``, rows ``1..`` with ``action``.
+
+    A 1-D ``[D]`` input, or a ``[1, D]`` one, is a state row. Both normalizers are affine, so
+    ``denormalize(normalize(x)) == x`` row by row.
+    """
+
+    def __init__(self, state, action) -> None:
+        self.state = state
+        self.action = action
+
+    def _apply(self, x: torch.Tensor, fn: str) -> torch.Tensor:
+        if x.dim() == 1:
+            return getattr(self.state, fn)(x)
+        out = torch.empty_like(x)
+        out[..., :1, :] = getattr(self.state, fn)(x[..., :1, :])
+        if x.shape[-2] > 1:
+            out[..., 1:, :] = getattr(self.action, fn)(x[..., 1:, :])
+        return out
+
+    def normalize_action(self, x: torch.Tensor) -> torch.Tensor:
+        return self._apply(x, "normalize_action")
+
+    def denormalize_action(self, x: torch.Tensor) -> torch.Tensor:
+        return self._apply(x, "denormalize_action")
+
+
 def compute_joint_quantile_stats(roots: list[str]) -> dict[str, np.ndarray]:
     """Pooled ``action`` + ``observation.state`` statistics over every frame of ``roots``.
 
@@ -145,18 +256,73 @@ def compute_joint_quantile_stats(roots: list[str]) -> dict[str, np.ndarray]:
     values = np.concatenate(rows, axis=0).astype(np.float64)  # [N, 62]
     if values.shape[1] != ACTION_DIM or not np.isfinite(values).all():
         raise ValueError(f"expected finite [N, {ACTION_DIM}] joint values, got {values.shape}")
-    q01, q99 = np.quantile(values, [0.01, 0.99], axis=0)
+    return _stats_of(values)
+
+
+def action_row_stats(pooled: dict[str, Any], relative: dict[str, Any], slices: JointSlices) -> dict[str, np.ndarray]:
+    """The action rows' statistics: ``pooled`` (absolute) with the relative columns replaced."""
+    mask = relative_joint_mask(slices).numpy()
+    out = {}
+    for key in ("q01", "q99", "mean", "std", "min", "max"):
+        row = np.asarray(pooled[key], dtype=np.float64).copy()
+        row[mask] = np.asarray(relative[key], dtype=np.float64)
+        out[key] = row
+    return out
+
+
+def representation(slices: JointSlices) -> dict[str, Any]:
+    """The contract's and the server's statement of the action representation."""
+    if not slices:
+        return {"type": "absolute"}
     return {
-        "q01": q01,
-        "q99": q99,
-        "mean": values.mean(0),
-        "std": values.std(0),
-        "min": values.min(0),
-        "max": values.max(0),
+        "type": "relative_joints",
+        "relative_joint_slices": [[int(a), int(b)] for a, b in slices],
+        "reference": "observation.state at the window's first frame (the conditioning row)",
+        "absolute_elsewhere": True,
     }
 
 
-def build_policy_contract(roots: list[str], narrow_joints: Literal["refuse", "widen"] = "refuse") -> dict[str, Any]:
+def representation_mismatch(stated: dict[str, Any] | None, slices: JointSlices) -> str | None:
+    """Why a contract stating ``stated`` does not fit a run of ``relative_joint_slices=slices``, or None.
+
+    Compares ``type`` and the relative slices only, as DexBench-Arena's ``representation_mismatch`` does,
+    so rewording the descriptive fields keeps existing contracts valid. No ``representation`` is absolute.
+    """
+    stated = stated or {"type": "absolute"}
+    if stated.get("type") not in ("absolute", "relative_joints"):
+        return f"unknown action representation {stated!r}"
+    stated_slices = stated.get("relative_joint_slices") if stated["type"] == "relative_joints" else None
+    found = [[int(a), int(b)] for a, b in stated_slices or ()]
+    expected = [[int(a), int(b)] for a, b in slices or ()]
+    if found == expected:
+        return None
+
+    def name(s: list[list[int]]) -> str:
+        return f"relative_joints {s}" if s else "absolute"
+
+    return f"states {name(found)} actions, the run is configured for {name(expected)}"
+
+
+def chunk_length_mismatch(contract: dict[str, Any], chunk_length: int) -> str | None:
+    """Why a contract's ``action_rows`` do not fit a run of ``chunk_length``, or None (always None without them).
+
+    The arm deltas ``action[t + k] - state[t]`` grow with ``k < chunk_length``, so statistics computed for
+    one chunk length mis-normalize another.
+    """
+    if "action_rows" not in contract:
+        return None
+    recorded = int(contract.get("action_rows_chunk_length", _UNRECORDED_CHUNK_LENGTH))
+    if recorded == int(chunk_length):
+        return None
+    return f"action_rows are for chunk_length {recorded}, the run's chunk_length is {chunk_length}"
+
+
+def build_policy_contract(
+    roots: list[str],
+    narrow_joints: Literal["refuse", "widen"] = "refuse",
+    relative_joint_slices: JointSlices = None,
+    chunk_length: int = 32,
+) -> dict[str, Any]:
     """What a policy server needs from the training data, in one JSON-ready dict.
 
     The pooled statistics sit at the top level, so ``load_action_stats`` reads the same file the
@@ -168,6 +334,11 @@ def build_policy_contract(roots: list[str], narrow_joints: Literal["refuse", "wi
     to train (``narrow_joints="refuse"``, the default). ``"widen"`` keeps its centre and sets its
     half-range to ``_MIN_QUANTILE_HALF_RANGE`` or, if larger, its furthest min/max from the centre,
     so no recorded value normalizes beyond +-1; ``normalization_adjustment.half_range_rad`` records it.
+
+    With ``relative_joint_slices`` the contract also states the ``representation`` and carries
+    ``action_rows``, the statistics the action rows normalize with: ``action[t + k] - state[t]``
+    (``k < chunk_length``, recorded as ``action_rows_chunk_length``) on the relative columns and the
+    top-level statistics, widened or not, on the rest. Without it the contract is the absolute one, unchanged.
     """
     names = frame_hw = fps = None
     tasks: list[str] = []
@@ -195,8 +366,21 @@ def build_policy_contract(roots: list[str], narrow_joints: Literal["refuse", "wi
             # Rounded outwards in float32, the precision the dataset normalizes in.
             stats["q01"][i] = np.nextafter(np.float32(centre[i] - half), np.float32(-np.inf))
             stats["q99"][i] = np.nextafter(np.float32(centre[i] + half), np.float32(np.inf))
+    relative: dict[str, Any] = {}
+    if relative_joint_slices:
+        deltas = compute_relative_action_stats(roots, relative_joint_slices, chunk_length)
+        relative = {
+            "representation": representation(relative_joint_slices),
+            "action_rows": {k: v.tolist() for k, v in action_row_stats(stats, deltas, relative_joint_slices).items()},
+            "action_rows_chunk_length": int(chunk_length),
+            "action_rows_note": (
+                f"action rows: q01/q99/mean/std/min/max of action[t+k] - state[t] (k < {chunk_length}) on the "
+                "relative columns, the top-level statistics elsewhere; the state row uses the top level"
+            ),
+        }
     return {
         **{key: value.tolist() for key, value in stats.items()},
+        **relative,
         "contract": {
             "embodiment": EMBODIMENT,
             "roots": [str(Path(root).resolve()) for root in roots],
@@ -230,7 +414,10 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         stereo_gap: int = 0,
         use_state: bool = True,
         enable_fast_init: bool = False,
+        relative_joint_slices: JointSlices = None,
     ) -> None:
+        if relative_joint_slices and not use_state:
+            raise ValueError("relative_joint_slices needs use_state=True (the state row is the reference)")
         if camera_set not in _CAMERA_SETS:
             raise ValueError(f"Unsupported camera_set={camera_set!r}. Use one of {_CAMERA_SETS}.")
         if not isinstance(stereo_gap, int) or stereo_gap < 0:
@@ -253,6 +440,16 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         # Read by _load_norm_stats, which the base __init__ calls.
         self._roots = roots
         self._action_stats_path = action_stats_path
+        self._relative_joint_slices = (
+            [[int(a), int(b)] for a, b in relative_joint_slices] if relative_joint_slices else None
+        )
+        self._relative_mask = relative_joint_mask(self._relative_joint_slices)
+        if action_stats_path:
+            # Either way round: an absolute run refuses a relative contract as a relative run refuses an absolute one.
+            contract = json.loads(Path(action_stats_path).read_text())
+            problem = representation_mismatch(contract.get("representation"), self._relative_joint_slices)
+            if problem:
+                raise ValueError(f"{action_stats_path} {problem}")
         super().__init__(
             fps=fps,
             chunk_length=chunk_length,
@@ -267,6 +464,11 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
             tolerance_s=tolerance_s,
             enable_fast_init=enable_fast_init,
         )
+        if self._relative_joint_slices and self._action_normalizer is not None:
+            row_stats = self._load_action_row_stats(action_normalization, chunk_length)
+            self._action_normalizer = StateActionRowNormalizer(
+                self._action_normalizer, resolve_action_normalization(action_normalization, row_stats)
+            )
         self._use_state = use_state
         self._camera_set = camera_set
         self._stereo_gap = stereo_gap
@@ -312,6 +514,32 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         log.info(f"{type(self).__name__}: {action_normalization} stats from {source}")
         return stats
 
+    def _load_action_row_stats(
+        self, action_normalization: ActionNormalization, chunk_length: int
+    ) -> dict[str, torch.Tensor]:
+        """The action rows' statistics: ``action_rows`` of ``action_stats_path``, else computed."""
+        if self._action_stats_path:
+            contract = json.loads(Path(self._action_stats_path).read_text())
+            problem = chunk_length_mismatch(contract, chunk_length)
+            if problem:
+                raise ValueError(f"{self._action_stats_path}: {problem}")
+            raw, source = contract["action_rows"], f"{self._action_stats_path} action_rows"
+        else:
+            pooled = compute_joint_quantile_stats(self._roots)
+            deltas = compute_relative_action_stats(self._roots, self._relative_joint_slices, chunk_length)
+            raw = action_row_stats(pooled, deltas, self._relative_joint_slices)
+            source = f"relative action rows of {self._roots}"
+        stats = {
+            key: torch.as_tensor(np.asarray(raw[key]), dtype=torch.float32)
+            for key in ("q01", "q99", "mean", "std", "min", "max")
+        }
+        half_range = (stats["q99"] - stats["q01"]) / 2
+        if action_normalization == "quantile" and bool((half_range < _MIN_QUANTILE_HALF_RANGE).any()):
+            narrow = [int(i) for i in torch.nonzero(half_range < _MIN_QUANTILE_HALF_RANGE).flatten()]
+            raise ValueError(f"degenerate q01..q99 range of the action rows for joints {narrow} ({source})")
+        log.info(f"{type(self).__name__}: {action_normalization} action-row stats from {source}")
+        return stats
+
     def _compose_video(self, sample: dict[str, Any]) -> torch.Tensor:
         left = sample[_IMAGE_FEATURES["left"]]  # [T,C,H,W]
         if self._camera_set == "left":
@@ -325,6 +553,10 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         if self._use_state:
             # Index 0 of the chunk+1 observation window is the current frame.
             state = sample[_STATE_FEATURE][0].float()  # [62]
+            if self._relative_joint_slices:
+                # Relative columns: each action minus the state of the window's first frame.
+                action = action.clone()
+                action[:, self._relative_mask] -= state[self._relative_mask]
             action = torch.cat([state.unsqueeze(0), action], dim=0)  # [chunk+1, 62]
 
         video = None if self._skip_video_loading else self._compose_video(sample)

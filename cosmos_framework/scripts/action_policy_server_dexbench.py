@@ -10,6 +10,11 @@ dataset settings read from the checkpoint's own config, so the padded frame, the
 the normalized state row are built by the same code that built them in training; only the
 diffusion start (frames 1.. and action rows 1.. are generated) differs.
 
+A run trained with ``relative_joint_slices`` predicts those columns relative to the state. The
+server denormalizes them with the contract's ``action_rows`` and adds the request's state back, so
+the reply is absolute joint targets either way; ``/info``'s ``action_representation`` states which
+representation the checkpoint was trained with, and a contract stating another one is refused.
+
 ``--contract-path`` is the run's ``policy_contract.json``
 (``cosmos_framework.scripts.write_dexbench_policy_contract``): pooled q01/q99 statistics plus the
 joint order, frame size and rate of the data the run trained on. The server normalizes the state
@@ -17,7 +22,7 @@ and denormalizes the chunk with it and refuses frames of another size.
 
 Endpoints (JSON; with ``--api-token-file`` every request needs ``Authorization: Bearer <token>``):
 
-- ``GET /info``: contract, sampling settings and checkpoint.
+- ``GET /info``: contract, sampling settings, checkpoint and ``action_representation``.
 - ``POST /predict``:
   ``{"images": {"left": <b64 PNG>, "right": <b64 PNG>}, "state": [62 floats], "prompt": str,
   "seed": int (optional)}`` ->
@@ -64,7 +69,12 @@ from cosmos_framework.data.generator.action.datasets.dexbench_rby1_wuji2_lerobot
     ACTION_DIM,
     EMBODIMENT,
     VIEW_DESCRIPTIONS,
+    StateActionRowNormalizer,
+    chunk_length_mismatch,
     find_dataset_node,
+    relative_joint_mask,
+    representation,
+    representation_mismatch,
     stack_stereo,
 )
 from cosmos_framework.data.generator.action.utils.action_processing import (
@@ -102,6 +112,7 @@ _DATASET_KEYS = (
     "append_resolution_info",
     "append_idle_frames",
     "format_prompt_as_json",
+    "relative_joint_slices",
 )
 
 
@@ -187,6 +198,25 @@ class DexBenchRequestBuilder:
             raise ValueError(f"contract fps {self.contract['fps']} != training fps {self.settings['fps']}")
         stats = {k: torch.from_numpy(np.asarray(v)).float() for k, v in load_action_stats(str(contract_path)).items()}
         self.normalizer = resolve_action_normalization(self.settings["action_normalization"], stats)
+        # Relative joints (config.yaml's relative_joint_slices): the contract must state the same
+        # representation; action rows denormalize with its action_rows block and get the state added back.
+        slices = self.settings["relative_joint_slices"]
+        self.representation = representation(slices)
+        problem = representation_mismatch(contract_file.get("representation"), slices)
+        if problem:
+            raise ValueError(f"{contract_path} {problem}")
+        problem = chunk_length_mismatch(contract_file, int(self.settings["chunk_length"]))
+        if problem:
+            raise ValueError(f"{contract_path}: {problem}")
+        self.relative_mask = relative_joint_mask(slices)
+        if slices:
+            rows = {
+                k: torch.as_tensor(np.asarray(contract_file["action_rows"][k]), dtype=torch.float32)
+                for k in ("q01", "q99", "mean", "std", "min", "max")
+            }
+            self.normalizer = StateActionRowNormalizer(
+                self.normalizer, resolve_action_normalization(self.settings["action_normalization"], rows)
+            )
         self.frame_hw = tuple(int(v) for v in self.contract["frame_hw"])
         self.chunk = int(self.settings["chunk_length"])
         self.max_action_dim = int(config["model"]["config"]["max_action_dim"])
@@ -207,6 +237,15 @@ class DexBenchRequestBuilder:
     @property
     def camera_names(self) -> list[str]:
         return ["left"] if self.settings["camera_set"] == "left" else ["left", "right"]
+
+    def to_absolute(self, pred_normalized: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+        """``[chunk+1, 62]`` model rows -> denormalized ``[chunk+1, 62]``: row 0 the state echo, rows 1..
+        absolute joint targets (the state added back on the relative columns)."""
+        pred = self.normalizer.denormalize_action(pred_normalized)
+        if bool(self.relative_mask.any()):
+            pred = pred.clone()
+            pred[1:, self.relative_mask] += state[self.relative_mask]
+        return pred
 
     def build_sample(self, req: dict[str, Any]) -> dict[str, Any]:
         """One request as the training pipeline's output dict (padded video, prompt, action)."""
@@ -273,8 +312,10 @@ class DexBenchPolicyService:
         self.token = args.api_token_file.read_text().strip() if args.api_token_file else None
         self._lock = threading.Lock()
         self._requests = 0
-        log.info(f"[dexbench-server] dataset settings {self.builder.settings}; frames {self.builder.frame_hw}; "
-                 f"domain {self.builder.domain_id}")
+        log.info(
+            f"[dexbench-server] dataset settings {self.builder.settings}; frames {self.builder.frame_hw}; "
+            f"domain {self.builder.domain_id}"
+        )
 
     def info(self) -> dict[str, Any]:
         b = self.builder
@@ -294,6 +335,7 @@ class DexBenchPolicyService:
             "guidance": self.args.guidance,
             "sampler": self.args.sampler,
             "seed": self.args.seed,
+            "action_representation": b.representation,
         }
 
     def predict(self, req: dict[str, Any]) -> dict[str, Any]:
@@ -329,19 +371,29 @@ class DexBenchPolicyService:
             )
         t2 = time.monotonic()
         pred = out["action"][0].float().reshape(-1, out["action"][0].shape[-1])[:, :ACTION_DIM].cpu()  # [T,62]
-        pred = self.builder.normalizer.denormalize_action(pred)  # [T,62] radians
+        pred = self.builder.to_absolute(pred, sample["state"])  # [T,62] radians, absolute targets
         if pred.shape[0] != self.builder.chunk + 1 or not torch.isfinite(pred).all():
-            raise RuntimeError(f"model returned {tuple(pred.shape)} actions, expected {self.builder.chunk + 1} finite rows")
+            raise RuntimeError(
+                f"model returned {tuple(pred.shape)} actions, expected {self.builder.chunk + 1} finite rows"
+            )
         echo = float((pred[0] - sample["state"]).abs().max())
         chunk = pred[1:]
         if self.args.dump_dir is not None:
             dump = self.args.dump_dir / f"req{request_id:06d}"
             dump.mkdir(parents=True, exist_ok=True)
             Image.fromarray(sample["stacked_frame"].permute(1, 2, 0).numpy()).save(dump / "frame.png")
-            (dump / "io.json").write_text(json.dumps({
-                "prompt": req["prompt"], "caption": sample["ai_caption"], "seed": seed,
-                "state": sample["state"].tolist(), "action": chunk.tolist(), "state_echo_error": echo,
-            }))
+            (dump / "io.json").write_text(
+                json.dumps(
+                    {
+                        "prompt": req["prompt"],
+                        "caption": sample["ai_caption"],
+                        "seed": seed,
+                        "state": sample["state"].tolist(),
+                        "action": chunk.tolist(),
+                        "state_echo_error": echo,
+                    }
+                )
+            )
         result = {
             "action": chunk.tolist(),
             "state_echo_error": echo,
@@ -350,8 +402,10 @@ class DexBenchPolicyService:
             "ms_prep": (t1 - t0) * 1e3,
             "ms_infer": (t2 - t1) * 1e3,
         }
-        log.info(f"[dexbench-server] request {request_id} seed {seed} prep {result['ms_prep']:.0f} ms "
-                 f"infer {result['ms_infer']:.0f} ms echo {echo:.4f} rad")
+        log.info(
+            f"[dexbench-server] request {request_id} seed {seed} prep {result['ms_prep']:.0f} ms "
+            f"infer {result['ms_infer']:.0f} ms echo {echo:.4f} rad"
+        )
         return result
 
 
@@ -410,8 +464,10 @@ def main() -> None:
     service = DexBenchPolicyService(args)
     httpd = ThreadingHTTPServer((args.host, int(args.port)), _Handler)
     setattr(httpd, "service", service)
-    log.info(f"[dexbench-server] serving http://{args.host}:{args.port} (node {get_local_ip()}); "
-             f"token {'required' if service.token else 'off'}")
+    log.info(
+        f"[dexbench-server] serving http://{args.host}:{args.port} (node {get_local_ip()}); "
+        f"token {'required' if service.token else 'off'}"
+    )
     httpd.serve_forever()
 
 
