@@ -101,6 +101,9 @@ VIEW_DESCRIPTIONS = {
 # A joint whose pooled q01..q99 half-range is below this would be scaled by ~1/0 under quantile
 # normalization; refuse rather than train on exploding values.
 _MIN_QUANTILE_HALF_RANGE = 1e-3
+# The chunk length of the action rows of a contract written before it recorded one: the writer's default,
+# which the launcher did not override.
+_UNRECORDED_CHUNK_LENGTH = 32
 
 
 def stack_stereo(left: torch.Tensor, right: torch.Tensor, gap: int = 0) -> torch.Tensor:
@@ -300,6 +303,20 @@ def representation_mismatch(stated: dict[str, Any] | None, slices: JointSlices) 
     return f"states {name(found)} actions, the run is configured for {name(expected)}"
 
 
+def chunk_length_mismatch(contract: dict[str, Any], chunk_length: int) -> str | None:
+    """Why a contract's ``action_rows`` do not fit a run of ``chunk_length``, or None (always None without them).
+
+    The arm deltas ``action[t + k] - state[t]`` grow with ``k < chunk_length``, so statistics computed for
+    one chunk length mis-normalize another.
+    """
+    if "action_rows" not in contract:
+        return None
+    recorded = int(contract.get("action_rows_chunk_length", _UNRECORDED_CHUNK_LENGTH))
+    if recorded == int(chunk_length):
+        return None
+    return f"action_rows are for chunk_length {recorded}, the run's chunk_length is {chunk_length}"
+
+
 def build_policy_contract(
     roots: list[str],
     narrow_joints: Literal["refuse", "widen"] = "refuse",
@@ -320,8 +337,8 @@ def build_policy_contract(
 
     With ``relative_joint_slices`` the contract also states the ``representation`` and carries
     ``action_rows``, the statistics the action rows normalize with: ``action[t + k] - state[t]``
-    (``k < chunk_length``) on the relative columns and the top-level statistics, widened or not, on
-    the rest. Without it the contract is the absolute one, unchanged.
+    (``k < chunk_length``, recorded as ``action_rows_chunk_length``) on the relative columns and the
+    top-level statistics, widened or not, on the rest. Without it the contract is the absolute one, unchanged.
     """
     names = frame_hw = fps = None
     tasks: list[str] = []
@@ -355,6 +372,7 @@ def build_policy_contract(
         relative = {
             "representation": representation(relative_joint_slices),
             "action_rows": {k: v.tolist() for k, v in action_row_stats(stats, deltas, relative_joint_slices).items()},
+            "action_rows_chunk_length": int(chunk_length),
             "action_rows_note": (
                 f"action rows: q01/q99/mean/std/min/max of action[t+k] - state[t] (k < {chunk_length}) on the "
                 "relative columns, the top-level statistics elsewhere; the state row uses the top level"
@@ -502,6 +520,9 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         """The action rows' statistics: ``action_rows`` of ``action_stats_path``, else computed."""
         if self._action_stats_path:
             contract = json.loads(Path(self._action_stats_path).read_text())
+            problem = chunk_length_mismatch(contract, chunk_length)
+            if problem:
+                raise ValueError(f"{self._action_stats_path}: {problem}")
             raw, source = contract["action_rows"], f"{self._action_stats_path} action_rows"
         else:
             pooled = compute_joint_quantile_stats(self._roots)

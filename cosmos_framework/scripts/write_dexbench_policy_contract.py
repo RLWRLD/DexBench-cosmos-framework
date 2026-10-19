@@ -47,7 +47,9 @@ def main(
         str | None,
         tyro.conf.arg(help='JSON column ranges trained relative to the state, e.g. "[[0, 14]]" (both arms).'),
     ] = None,
-    chunk_length: Annotated[int, tyro.conf.arg(help="The run's chunk_length (relative statistics only).")] = 32,
+    chunk_length: Annotated[
+        int, tyro.conf.arg(help="The run's chunk_length (relative statistics only; recorded with them).")
+    ] = 32,
 ) -> None:
     """Write policy_contract.json for a DexBench RBY1-M + Wuji 2 run."""
     if dataset_root:

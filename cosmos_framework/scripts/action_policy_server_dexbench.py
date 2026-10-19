@@ -70,6 +70,7 @@ from cosmos_framework.data.generator.action.datasets.dexbench_rby1_wuji2_lerobot
     EMBODIMENT,
     VIEW_DESCRIPTIONS,
     StateActionRowNormalizer,
+    chunk_length_mismatch,
     find_dataset_node,
     relative_joint_mask,
     representation,
@@ -204,6 +205,9 @@ class DexBenchRequestBuilder:
         problem = representation_mismatch(contract_file.get("representation"), slices)
         if problem:
             raise ValueError(f"{contract_path} {problem}")
+        problem = chunk_length_mismatch(contract_file, int(self.settings["chunk_length"]))
+        if problem:
+            raise ValueError(f"{contract_path}: {problem}")
         self.relative_mask = relative_joint_mask(slices)
         if slices:
             rows = {
