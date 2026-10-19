@@ -426,6 +426,12 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
             [[int(a), int(b)] for a, b in relative_joint_slices] if relative_joint_slices else None
         )
         self._relative_mask = relative_joint_mask(self._relative_joint_slices)
+        if action_stats_path:
+            # Either way round: an absolute run refuses a relative contract as a relative run refuses an absolute one.
+            contract = json.loads(Path(action_stats_path).read_text())
+            problem = representation_mismatch(contract.get("representation"), self._relative_joint_slices)
+            if problem:
+                raise ValueError(f"{action_stats_path} {problem}")
         super().__init__(
             fps=fps,
             chunk_length=chunk_length,
@@ -496,9 +502,6 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         """The action rows' statistics: ``action_rows`` of ``action_stats_path``, else computed."""
         if self._action_stats_path:
             contract = json.loads(Path(self._action_stats_path).read_text())
-            problem = representation_mismatch(contract.get("representation"), self._relative_joint_slices)
-            if problem:
-                raise ValueError(f"{self._action_stats_path} {problem}")
             raw, source = contract["action_rows"], f"{self._action_stats_path} action_rows"
         else:
             pooled = compute_joint_quantile_stats(self._roots)
