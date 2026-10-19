@@ -7,7 +7,8 @@
 statistics pooled over ``action`` and ``observation.state`` (the training normalizer), plus the
 joint order, frame size, rate and prompts of the data. The dataset roots are taken from the run's
 saved ``config.yaml`` (the resolved roots its dataloader read), so the statistics are those of the
-data the run trained on; ``--dataset-root`` replaces them when that data has moved.
+data the run trained on; ``--dataset-root`` replaces them when that data has moved, or names them
+before the run exists (the launcher writes the contract this way before training).
 
 Usage
 -----
@@ -18,7 +19,7 @@ Usage
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import tyro
 
@@ -30,12 +31,16 @@ from cosmos_framework.inference.common.config import deserialize_config_dict
 
 
 def main(
-    config_file: Annotated[Path, tyro.conf.arg(help="The training run's saved config.yaml.")],
     output: Annotated[Path, tyro.conf.arg(aliases=("-o",), help="Output policy_contract.json path.")],
+    config_file: Annotated[Path | None, tyro.conf.arg(help="The training run's saved config.yaml.")] = None,
     dataset_root: Annotated[
         list[Path] | None,
         tyro.conf.arg(help="LeRobot v3.0 roots to read instead of the ones config.yaml names."),
     ] = None,
+    narrow_joints: Annotated[
+        Literal["refuse", "widen"],
+        tyro.conf.arg(help="Joints with a q01..q99 half-range under 1e-3: leave them (training refuses) or widen."),
+    ] = "refuse",
 ) -> None:
     """Write policy_contract.json for a DexBench RBY1-M + Wuji 2 run."""
     if dataset_root:
@@ -43,7 +48,7 @@ def main(
     else:
         root = find_dataset_node(deserialize_config_dict(config_file))["root"]
         roots = [root] if isinstance(root, str) else list(root)
-    contract = build_policy_contract(roots)
+    contract = build_policy_contract(roots, narrow_joints)
     output.parent.mkdir(parents=True, exist_ok=True)
     partial = output.with_name(output.name + ".partial")
     partial.write_text(json.dumps(contract, indent=1) + "\n")
