@@ -8,7 +8,9 @@ statistics pooled over ``action`` and ``observation.state`` (the training normal
 joint order, frame size, rate and prompts of the data. The dataset roots are taken from the run's
 saved ``config.yaml`` (the resolved roots its dataloader read), so the statistics are those of the
 data the run trained on; ``--dataset-root`` replaces them when that data has moved, or names them
-before the run exists (the launcher writes the contract this way before training).
+before the run exists (the launcher writes the contract this way before training). A run trained
+with ``relative_joint_slices`` needs the same ``--relative-joint-slices`` here: the contract then
+states that representation and carries the action rows' statistics (``build_policy_contract``).
 
 Usage
 -----
@@ -41,6 +43,11 @@ def main(
         Literal["refuse", "widen"],
         tyro.conf.arg(help="Joints with a q01..q99 half-range under 1e-3: leave them (training refuses) or widen."),
     ] = "refuse",
+    relative_joint_slices: Annotated[
+        str | None,
+        tyro.conf.arg(help='JSON column ranges trained relative to the state, e.g. "[[0, 14]]" (both arms).'),
+    ] = None,
+    chunk_length: Annotated[int, tyro.conf.arg(help="The run's chunk_length (relative statistics only).")] = 32,
 ) -> None:
     """Write policy_contract.json for a DexBench RBY1-M + Wuji 2 run."""
     if dataset_root:
@@ -48,7 +55,8 @@ def main(
     else:
         root = find_dataset_node(deserialize_config_dict(config_file))["root"]
         roots = [root] if isinstance(root, str) else list(root)
-    contract = build_policy_contract(roots, narrow_joints)
+    slices = json.loads(relative_joint_slices) if relative_joint_slices else None
+    contract = build_policy_contract(roots, narrow_joints, slices, chunk_length)
     output.parent.mkdir(parents=True, exist_ok=True)
     partial = output.with_name(output.name + ".partial")
     partial.write_text(json.dumps(contract, indent=1) + "\n")
