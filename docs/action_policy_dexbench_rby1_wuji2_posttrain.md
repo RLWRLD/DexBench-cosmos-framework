@@ -100,6 +100,11 @@ with it (`action_stats_path`), so the trainer and the policy server normalize wi
   run's `config.yaml`.
 - `DEXBENCH_NARROW_JOINTS` — `refuse` (default) stops on a joint whose q01..q99 half-range is
   under 1e-3; `widen` widens such a joint's range instead and records it in the contract.
+- `DEXBENCH_RELATIVE_JOINT_SLICES` — unset (default) trains absolute actions; JSON column ranges
+  such as `"[[0, 14]]"` (both arms) train those columns as `action - state`, with the state of the
+  window's first frame. The contract then states the representation and carries the action rows'
+  statistics (`action_rows`, the arm deltas on those columns), and the run's config carries
+  `relative_joint_slices`, from which the policy server adds the state back.
 
 The recipe TOML ([`action_policy_dexbench_rby1_wuji2_nano.toml`](../examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml)) sets the scalar
 knobs (`max_iter`, `save_iter`, `grad_accum_iter`, parallelism, wandb); the dataset/action knobs

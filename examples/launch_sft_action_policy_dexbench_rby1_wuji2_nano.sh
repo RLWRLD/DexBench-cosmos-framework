@@ -12,6 +12,9 @@
 # Env vars (override for your filesystem):
 #   DEXBENCH_COSMOS3_DATASET  LeRobot v3.0 root(s) (62-D joints, 256x144 stereo), space-separated, no default
 #   DEXBENCH_NARROW_JOINTS    refuse (default) | widen: joints with a q01..q99 half-range under 1e-3
+#   DEXBENCH_RELATIVE_JOINT_SLICES  unset (default): absolute actions; JSON column ranges such as
+#                             "[[0, 14]]" (both arms) train those columns relative to the state, in the
+#                             contract (representation, action_rows) and in the dataset alike
 #   POLICY_CONTRACT           default <job dir>/policy_contract.json, the dir the trainer writes
 #                             config.yaml to ($OUTPUT_ROOT/cosmos3_action_dexbench/action_sft/<job.name>);
 #                             written from the roots before training; training normalizes with it
@@ -49,7 +52,9 @@ DS=dataloader_train.dataloader.datasets.dexbench.dataset
 EXTRA_DATASET_CHECK='for r in "${DEXBENCH_ROOTS[@]:-}"; do [[ -f "$r/meta/info.json" ]] || { echo "ERROR: DEXBENCH_COSMOS3_DATASET must be local LeRobot v3.0 dirs containing meta/info.json (got: '\''$DEXBENCH_COSMOS3_DATASET'\''). See docs/action_policy_dexbench_rby1_wuji2_posttrain.md" >&2; exit 1; }; done
 POLICY_CONTRACT="${POLICY_CONTRACT:-$IMAGINAIRE_OUTPUT_ROOT/$(job_key project)/$(job_key group)/$(job_key name)/policy_contract.json}"
 (cd "$WORKDIR" && mkdir -p "$(dirname "$POLICY_CONTRACT")" && PYTHONPATH=. python -m cosmos_framework.scripts.write_dexbench_policy_contract -o "$POLICY_CONTRACT" \
-    --dataset-root "${DEXBENCH_ROOTS[@]}" --narrow-joints "${DEXBENCH_NARROW_JOINTS:-refuse}") || exit 1
+    --dataset-root "${DEXBENCH_ROOTS[@]}" --narrow-joints "${DEXBENCH_NARROW_JOINTS:-refuse}" \
+    ${DEXBENCH_RELATIVE_JOINT_SLICES:+--relative-joint-slices "$DEXBENCH_RELATIVE_JOINT_SLICES"}) || exit 1
+[[ -n "${DEXBENCH_RELATIVE_JOINT_SLICES:-}" ]] && TAIL_OVERRIDES+=("+$DS.relative_joint_slices=${DEXBENCH_RELATIVE_JOINT_SLICES// /}")
 TAIL_OVERRIDES+=("+$DS.action_stats_path=$POLICY_CONTRACT")
 (( ${#DEXBENCH_ROOTS[@]} > 1 )) && TAIL_OVERRIDES+=("$DS.root=[$(IFS=,; echo "${DEXBENCH_ROOTS[*]}")]")'
 
