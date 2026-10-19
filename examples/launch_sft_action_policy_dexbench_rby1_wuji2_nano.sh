@@ -10,7 +10,11 @@
 # + use_state, head stereo pair). See docs/action_policy_dexbench_rby1_wuji2_posttrain.md.
 #
 # Env vars (override for your filesystem):
-#   DEXBENCH_COSMOS3_DATASET  LeRobot v3.0 root (62-D joints, 256x144 stereo), no default
+#   DEXBENCH_COSMOS3_DATASET  LeRobot v3.0 root(s) (62-D joints, 256x144 stereo), space-separated, no default
+#   DEXBENCH_NARROW_JOINTS    refuse (default) | widen: joints with a q01..q99 half-range under 1e-3
+#   POLICY_CONTRACT           default $OUTPUT_ROOT/policy_contract.json, written from the roots before
+#                             training; training normalizes with it (action_stats_path) and the
+#                             policy server reads it (--contract-path)
 #   BASE_CHECKPOINT_PATH      DCP of nvidia/Cosmos3-Nano (default examples/checkpoints/Cosmos3-Nano)
 #   WAN_VAE_PATH              Wan2.2 VAE .pth (default examples/checkpoints/wan22_vae/Wan2.2_VAE.pth)
 #   OUTPUT_ROOT               default outputs/train
@@ -29,7 +33,15 @@ TOML_FILE="examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml"
 
 export DEXBENCH_COSMOS3_DATASET="${DEXBENCH_COSMOS3_DATASET:-}"
 
-EXTRA_DATASET_CHECK='[[ -f "$DEXBENCH_COSMOS3_DATASET/meta/info.json" ]] || { echo "ERROR: DEXBENCH_COSMOS3_DATASET must be a local LeRobot v3.0 dir containing meta/info.json (got: '\''$DEXBENCH_COSMOS3_DATASET'\''). See docs/action_policy_dexbench_rby1_wuji2_posttrain.md" >&2; exit 1; }'
+read -ra DEXBENCH_ROOTS <<< "$DEXBENCH_COSMOS3_DATASET"
+DS=dataloader_train.dataloader.datasets.dexbench.dataset
+# After the input checks: write the policy contract from the roots and train with it.
+EXTRA_DATASET_CHECK='for r in "${DEXBENCH_ROOTS[@]:-}"; do [[ -f "$r/meta/info.json" ]] || { echo "ERROR: DEXBENCH_COSMOS3_DATASET must be local LeRobot v3.0 dirs containing meta/info.json (got: '\''$DEXBENCH_COSMOS3_DATASET'\''). See docs/action_policy_dexbench_rby1_wuji2_posttrain.md" >&2; exit 1; }; done
+POLICY_CONTRACT="${POLICY_CONTRACT:-$OUTPUT_ROOT/policy_contract.json}"
+(cd "$WORKDIR" && PYTHONPATH=. python -m cosmos_framework.scripts.write_dexbench_policy_contract -o "$POLICY_CONTRACT" \
+    --dataset-root "${DEXBENCH_ROOTS[@]}" --narrow-joints "${DEXBENCH_NARROW_JOINTS:-refuse}") || exit 1
+TAIL_OVERRIDES+=("+$DS.action_stats_path=$POLICY_CONTRACT")
+(( ${#DEXBENCH_ROOTS[@]} > 1 )) && TAIL_OVERRIDES+=("$DS.root=[$(IFS=,; echo "${DEXBENCH_ROOTS[*]}")]")'
 
 TAIL_OVERRIDES=(
     ${EXTRA_TAIL_OVERRIDES:-}

@@ -7,7 +7,8 @@
 statistics pooled over ``action`` and ``observation.state`` (the training normalizer), plus the
 joint order, frame size, rate and prompts of the data. The dataset roots are taken from the run's
 saved ``config.yaml`` (the resolved roots its dataloader read), so the statistics are those of the
-data the run trained on; ``--dataset-root`` replaces them when that data has moved.
+data the run trained on; ``--dataset-root`` replaces them when that data has moved, or names them
+before the run exists (the launcher writes the contract this way before training).
 
 Usage
 -----
@@ -30,8 +31,8 @@ from cosmos_framework.inference.common.config import deserialize_config_dict
 
 
 def main(
-    config_file: Annotated[Path, tyro.conf.arg(help="The training run's saved config.yaml.")],
     output: Annotated[Path, tyro.conf.arg(aliases=("-o",), help="Output policy_contract.json path.")],
+    config_file: Annotated[Path | None, tyro.conf.arg(help="The training run's saved config.yaml.")] = None,
     dataset_root: Annotated[
         list[Path] | None,
         tyro.conf.arg(help="LeRobot v3.0 roots to read instead of the ones config.yaml names."),

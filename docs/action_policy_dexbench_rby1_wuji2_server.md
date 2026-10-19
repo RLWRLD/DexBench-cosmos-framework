@@ -28,8 +28,10 @@ ______________________________________________________________________
 The server normalizes the state and denormalizes the predicted chunk with the run's
 `policy_contract.json`: the q01/q99/mean/std/min/max statistics pooled over `action` and
 `observation.state` (the training normalizer), plus the joint order, frame size, rate and prompts
-of the data. Write it from the run's saved `config.yaml`, which names the dataset roots the run
-trained on (`--dataset-root` replaces them if that data has moved):
+of the data. The launcher writes it to `$OUTPUT_ROOT/policy_contract.json` before training and
+trains with it (`action_stats_path`). To write it again later, from the run's saved `config.yaml`,
+which names the dataset roots the run trained on (`--dataset-root` replaces them if that data has
+moved), pass the `--narrow-joints` the run used (`DEXBENCH_NARROW_JOINTS`):
 
 ```shell
 python -m cosmos_framework.scripts.write_dexbench_policy_contract \
