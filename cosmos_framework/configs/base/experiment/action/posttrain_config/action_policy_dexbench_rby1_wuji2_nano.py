@@ -171,6 +171,7 @@ action_policy_dexbench_rby1_wuji2_nano = LazyDict(
                             viewpoint="concat_view",
                             camera_set="stereo_stack",
                             stereo_gap=32,
+                            color_jitter=dict(brightness=0.3, contrast=0.3, saturation=0.3),
                             use_state=True,
                             action_normalization="quantile",
                             split="train",
