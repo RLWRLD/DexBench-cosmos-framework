@@ -10,9 +10,11 @@ Trains Cosmos3-Nano into a bimanual dexterous policy on DexBench recordings (E2
 state is the clean conditioning row 0 (``use_state=True``, ``mode="wam"``); state and actions
 share one quantile normalizer pooled over both columns.
 
-Observation is the head stereo pair at 256x144 per camera, stacked vertically with a 32-row
-black band between the eyes (``stereo_gap=32``) into 256x320, the 256 tier's 3:4 canvas, so
-neither camera is resized or padded (about 720 vision tokens per sample). Training uses a
+Observation is ``camera_set="ego_wrists"``: the left head camera over the two wrist cameras on one
+320x256 canvas, the 256 tier's 4:3 size, with every view edge on the 32-pixel token grid (about 720
+vision tokens per sample); store the cameras at 320x180. The earlier head-stereo setup stays available
+for comparison: ``camera_set="stereo_stack"`` with ``stereo_gap=32`` on 256x144 data (the launcher's
+``DEXBENCH_CAMERA_SET=stereo_stack``) stacks both head cameras into the 256x320 3:4 canvas. Training uses a
 rectified-flow shift of 3, the 256 tier's value in ``NANO_MODEL_CONFIG``, set here as a plain int;
 the policy server samples at 4 denoising steps with shift 5 by default
 (``action_policy_server_dexbench``). The new ``dexbench_rby1_wuji2`` domain id is 33,
@@ -156,7 +158,7 @@ action_policy_dexbench_rby1_wuji2_nano = LazyDict(
             tokenizer_spatial_compression_factor=16,
             tokenizer_temporal_compression_factor=4,
             dataloader=L(RankPartitionedDataLoader)(
-                batch_size=1, in_order=False, num_workers=4,
+                batch_size=1, in_order=False, num_workers=8,  # ego_wrists: ~0.35 s per sample per worker (jitter, decode)
                 persistent_workers=True, pin_memory=True, prefetch_factor=4, sampler=None,
                 datasets=dict(
                     dexbench=dict(
@@ -169,8 +171,7 @@ action_policy_dexbench_rby1_wuji2_nano = LazyDict(
                             chunk_length=32,
                             mode="wam",
                             viewpoint="concat_view",
-                            camera_set="stereo_stack",
-                            stereo_gap=32,
+                            camera_set="ego_wrists",
                             color_jitter=dict(brightness=0.3, contrast=0.3, saturation=0.3),
                             use_state=True,
                             action_normalization="quantile",

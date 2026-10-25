@@ -7,10 +7,13 @@
 # Drives cosmos_framework.scripts.train against
 # examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml (selects the
 # registered `action_policy_dexbench_rby1_wuji2_nano` experiment; 256 tier, 62-D absolute joints
-# + use_state, head stereo pair). See docs/action_policy_dexbench_rby1_wuji2_posttrain.md.
+# + use_state, head and wrist cameras). See docs/action_policy_dexbench_rby1_wuji2_posttrain.md.
 #
 # Env vars (override for your filesystem):
-#   DEXBENCH_COSMOS3_DATASET  LeRobot v3.0 root(s) (62-D joints, 256x144 stereo), space-separated, no default
+#   DEXBENCH_COSMOS3_DATASET  LeRobot v3.0 root(s) (62-D joints; 320x180 cameras for ego_wrists, 256x144
+#                             for stereo_stack), space-separated, no default
+#   DEXBENCH_CAMERA_SET       ego_wrists (default): left head camera over both wrist cameras;
+#                             stereo_stack: the head stereo pair with a 32-row band (the earlier setup)
 #   DEXBENCH_NARROW_JOINTS    refuse (default) | widen: joints with a q01..q99 half-range under 1e-3
 #   DEXBENCH_RELATIVE_JOINT_SLICES  unset (default): absolute actions; JSON column ranges such as
 #                             "[[0, 14]]" (both arms) train those columns relative to the state, in the
@@ -67,5 +70,10 @@ TAIL_OVERRIDES+=("+$DS.action_stats_path=$POLICY_CONTRACT")
 TAIL_OVERRIDES=(
     ${EXTRA_TAIL_OVERRIDES:-}
 )
+case "${DEXBENCH_CAMERA_SET:-ego_wrists}" in
+    ego_wrists) ;;
+    stereo_stack) TAIL_OVERRIDES+=("$DS.camera_set=stereo_stack" "$DS.stereo_gap=32") ;;
+    *) echo "ERROR: DEXBENCH_CAMERA_SET must be ego_wrists or stereo_stack (got: $DEXBENCH_CAMERA_SET)" >&2; exit 1 ;;
+esac
 
 source "$(dirname "${BASH_SOURCE[0]}")/_sft_launcher_common.sh"

@@ -1,6 +1,6 @@
 # Cosmos3 DexBench RBY1-M + Wuji 2 Action-Policy Post-Training
 
-This example post-trains [Cosmos3-Nano](https://huggingface.co/nvidia/Cosmos3-Nano) into a bimanual dexterous policy for the DexBench RBY1-M robot with two Wuji 2 hands. The model predicts 62 absolute joint positions conditioned on the measured joint state and the head stereo pair at the 256 resolution tier (`256×144` per camera). Experiment `action_policy_dexbench_rby1_wuji2_nano`, launcher `launch_sft_action_policy_dexbench_rby1_wuji2_nano.sh`. Serving a trained checkpoint is covered in [action_policy_dexbench_rby1_wuji2_server.md](./action_policy_dexbench_rby1_wuji2_server.md).
+This example post-trains [Cosmos3-Nano](https://huggingface.co/nvidia/Cosmos3-Nano) into a bimanual dexterous policy for the DexBench RBY1-M robot with two Wuji 2 hands. The model predicts 62 absolute joint positions conditioned on the measured joint state and, at the 256 resolution tier, the left head camera over the two wrist cameras on one `320×256` canvas (the earlier head-stereo setup stays selectable). Experiment `action_policy_dexbench_rby1_wuji2_nano`, launcher `launch_sft_action_policy_dexbench_rby1_wuji2_nano.sh`. Serving a trained checkpoint is covered in [action_policy_dexbench_rby1_wuji2_server.md](./action_policy_dexbench_rby1_wuji2_server.md).
 
 Two external inputs are required: (1) a DexBench dataset in LeRobotDataset v3.0 format, and (2) a DCP base checkpoint converted from Cosmos3-Nano.
 
@@ -57,8 +57,8 @@ external and must be provided per environment:
 | action space | 62 absolute joint positions (rad): `left_arm 7, right_arm 7, head 2, hands 40, torso 6`                                      |
 | state        | `use_state=true`; the current state is the clean conditioning row, one quantile normalizer pooled over `action` and `state`  |
 | task mode    | `wam`                                                                                                                        |
-| resolution   | `256`: both cameras at `256×144`, stacked left over right with a 32-row band (`stereo_gap=32`) into the `256×320` 3:4 canvas |
-| viewpoint    | `concat_view`, `camera_set=stereo_stack`                                                                                     |
+| resolution   | `256`: the left head camera at `320×160` over the two wrist cameras at `160×90`, one `320×256` 4:3 canvas (data at `320×180` per camera) |
+| viewpoint    | `concat_view`, `camera_set=ego_wrists`; `DEXBENCH_CAMERA_SET=stereo_stack` trains the earlier head stereo pair (`256×144`, `stereo_gap=32`) |
 | rate / chunk | native 30 Hz, chunk `32` (tokenizer `encode_exact_durations=[33]`)                                                           |
 | rf shift     | training `3`; the policy server samples at `5` with 4 denoising steps                                                        |
 | domain       | `dexbench_rby1_wuji2` = 33 (`num_embodiment_domains=34`; the action projections train from scratch)                          |
@@ -83,7 +83,8 @@ hf download Wan-AI/Wan2.2-TI2V-5B Wan2.2_VAE.pth \
 
 # Step 3: launch. The TOML selects the experiment + scalars; the dataset/action
 # knobs come from the registered experiment.
-export DEXBENCH_COSMOS3_DATASET=/path/to/dexbench_62d_256x144_lerobotv30
+export DEXBENCH_COSMOS3_DATASET=/path/to/dexbench_62d_320x180_4cam_lerobotv30
+# export DEXBENCH_CAMERA_SET=stereo_stack  # the head stereo pair instead, on 256x144 data
 export BASE_CHECKPOINT_PATH=/path/to/base_checkpoint
 export WAN_VAE_PATH=/path/to/wan22_vae/Wan2.2_VAE.pth
 export OUTPUT_ROOT=/path/to/outputs
