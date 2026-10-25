@@ -332,6 +332,7 @@ def get_action_dexbench_rby1_wuji2_sft_dataset(
     iterable_shuffle: bool = False,
     episode_shuffle_seed: int = 42,
     relative_joint_slices: list[list[int]] | None = None,
+    color_jitter: dict[str, float] | None = None,
 ) -> Dataset:
     """Build the DexBench RBY1-M + Wuji 2 action-policy SFT dataset.
 
@@ -340,7 +341,8 @@ def get_action_dexbench_rby1_wuji2_sft_dataset(
     ``ActionTransformPipeline``. ``root`` is one LeRobot v3.0 dataset root or a list of them.
     Idle-frame captions are off: the base idle detector handles frame-wise deltas only.
     ``relative_joint_slices`` (e.g. ``[[0, 14]]`` for both arms) trains those columns' actions relative
-    to the window's first state; see ``DexBenchRby1Wuji2LeRobotDataset``.
+    to the window's first state; see ``DexBenchRby1Wuji2LeRobotDataset``. ``color_jitter`` (``ColorJitter``
+    arguments) jitters the cameras with one draw per sample.
     """
     dataset: Dataset = DexBenchRby1Wuji2LeRobotDataset(
         root=root,
@@ -357,6 +359,7 @@ def get_action_dexbench_rby1_wuji2_sft_dataset(
         split_val_ratio=split_val_ratio,
         split_seed=split_seed,
         relative_joint_slices=relative_joint_slices,
+        color_jitter=color_jitter,
     )
     transform = ActionTransformPipeline(
         tokenizer_config=tokenizer_config,

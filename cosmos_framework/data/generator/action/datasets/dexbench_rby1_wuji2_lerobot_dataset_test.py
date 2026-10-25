@@ -10,9 +10,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 import torch
+import torchvision.transforms.v2 as T
 
 from cosmos_framework.data.generator.action.datasets.dexbench_rby1_wuji2_lerobot_dataset import (
     ACTION_DIM,
+    DexBenchRby1Wuji2LeRobotDataset,
     StateActionRowNormalizer,
     action_row_stats,
     compute_joint_quantile_stats,
@@ -103,3 +105,22 @@ def test_relative_actions_round_trip_to_the_recorded_actions(tmp_path: Path) -> 
     absolute = builder.to_absolute(normalized, state_t)
     torch.testing.assert_close(absolute[0], state_t, rtol=0, atol=1e-5)
     torch.testing.assert_close(absolute[1:], recorded, rtol=0, atol=1e-5)
+
+
+@pytest.mark.L0
+def test_color_jitter_draws_once_for_both_cameras_and_every_frame() -> None:
+    dataset = object.__new__(DexBenchRby1Wuji2LeRobotDataset)  # _compose_video reads only these attributes
+    dataset._camera_set, dataset._stereo_gap = "stereo_stack", 4
+    dataset._color_jitter = T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3)
+    frame = torch.rand(3, 8, 8)
+    sample = {
+        "observation.images.camera_ego_left": frame.expand(5, -1, -1, -1).clone(),
+        "observation.images.camera_ego_right": frame.expand(5, -1, -1, -1).clone(),
+    }
+    torch.manual_seed(0)
+    video = dataset._compose_video(sample)  # [5,3,20,8]
+    left, band, right = video[:, :, :8], video[:, :, 8:12], video[:, :, 12:]
+    assert not torch.equal(left[0], frame)
+    assert torch.equal(left, right) and torch.equal(left, left[:1].expand_as(left))
+    assert not band.any()
+

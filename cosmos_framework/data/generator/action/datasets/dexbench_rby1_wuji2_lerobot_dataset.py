@@ -57,6 +57,7 @@ from typing import Any, Literal
 import numpy as np
 import pyarrow.parquet as pq
 import torch
+import torchvision.transforms.v2 as T
 
 from cosmos_framework.data.generator.action.datasets.cosmos3_action_lerobot import (
     ActionNormalization,
@@ -415,6 +416,7 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         use_state: bool = True,
         enable_fast_init: bool = False,
         relative_joint_slices: JointSlices = None,
+        color_jitter: dict[str, float] | None = None,
     ) -> None:
         if relative_joint_slices and not use_state:
             raise ValueError("relative_joint_slices needs use_state=True (the state row is the reference)")
@@ -473,6 +475,8 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         self._camera_set = camera_set
         self._stereo_gap = stereo_gap
         self._all_shard_roots = roots
+        # One draw per sample, applied to every frame of both cameras (as in the DROID dataset).
+        self._color_jitter = T.ColorJitter(**color_jitter) if color_jitter else None
 
         # chunk_length future actions; chunk_length + 1 observation frames (current + future).
         observation_ts = [i * self._dt for i in range(self._chunk_length + 1)]
@@ -543,8 +547,11 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
     def _compose_video(self, sample: dict[str, Any]) -> torch.Tensor:
         left = sample[_IMAGE_FEATURES["left"]]  # [T,C,H,W]
         if self._camera_set == "left":
-            return left
+            return self._color_jitter(left) if self._color_jitter else left
         right = sample[_IMAGE_FEATURES["right"]]  # [T,C,H,W]
+        if self._color_jitter:
+            # Before stacking, so the black band between the cameras stays black.
+            left, right = self._color_jitter(torch.cat([left, right])).chunk(2)
         return stack_stereo(left, right, self._stereo_gap)  # [T,C,2H+gap,W]
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
