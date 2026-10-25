@@ -67,10 +67,13 @@ from cosmos_framework.data.generator.action.datasets.action_sft_dataset import (
 )
 from cosmos_framework.data.generator.action.datasets.dexbench_rby1_wuji2_lerobot_dataset import (
     ACTION_DIM,
+    CAMERA_VIEWS,
     EMBODIMENT,
+    IMAGE_FEATURES,
     VIEW_DESCRIPTIONS,
     StateActionRowNormalizer,
     chunk_length_mismatch,
+    compose_ego_wrists,
     find_dataset_node,
     relative_joint_mask,
     representation,
@@ -236,7 +239,12 @@ class DexBenchRequestBuilder:
 
     @property
     def camera_names(self) -> list[str]:
-        return ["left"] if self.settings["camera_set"] == "left" else ["left", "right"]
+        """The request's image keys: left/right for the stereo sets; for ego_wrists the dataset camera names,
+        which /info lists so the DexBench client sends exactly those cameras."""
+        views = CAMERA_VIEWS[self.settings["camera_set"]]
+        if self.settings["camera_set"] != "ego_wrists":
+            return list(views)
+        return [IMAGE_FEATURES[v].removeprefix("observation.images.") for v in views]
 
     def to_absolute(self, pred_normalized: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
         """``[chunk+1, 62]`` model rows -> denormalized ``[chunk+1, 62]``: row 0 the state echo, rows 1..
@@ -253,10 +261,16 @@ class DexBenchRequestBuilder:
         state = req.get("state")
         prompt = req.get("prompt")
         if not isinstance(images, dict) or not isinstance(prompt, str) or not prompt:
-            raise ValueError("request needs 'images' {left, right}, 'state' and a non-empty 'prompt'")
+            raise ValueError(f"request needs 'images' {self.camera_names}, 'state' and a non-empty 'prompt'")
         frames = [_decode_png(images.get(n, ""), self.frame_hw, n) for n in self.camera_names]
-        # [3,H,W], or [3,2H+gap,W] with the left camera on top, built as the training dataset builds it
-        frame = frames[0] if len(frames) == 1 else stack_stereo(*frames, gap=int(self.settings["stereo_gap"]))
+        # Built as the training dataset builds it: [3,H,W], [3,2H+gap,W] with the left camera on top, or the
+        # [3,256,320] ego_wrists canvas
+        if self.settings["camera_set"] == "ego_wrists":
+            frame = compose_ego_wrists(*frames)
+        elif len(frames) == 1:
+            frame = frames[0]
+        else:
+            frame = stack_stereo(*frames, gap=int(self.settings["stereo_gap"]))
         state_t = torch.as_tensor(state, dtype=torch.float32).reshape(-1)  # [62]
         if state_t.shape[0] != ACTION_DIM or not torch.isfinite(state_t).all():
             raise ValueError(f"'state' must be {ACTION_DIM} finite joint positions in contract order")
@@ -325,7 +339,8 @@ class DexBenchPolicyService:
             "embodiment": EMBODIMENT,
             "joint_names": b.contract["joint_names"],
             "frame_hw": list(b.frame_hw),
-            "camera_set": b.settings["camera_set"],
+            "camera_set": b.camera_names if b.settings["camera_set"] == "ego_wrists" else b.settings["camera_set"],
+            "camera_layout": b.settings["camera_set"],
             "stereo_gap": b.settings["stereo_gap"],
             "fps": b.settings["fps"],
             "action_horizon": b.chunk,

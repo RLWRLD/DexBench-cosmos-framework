@@ -35,7 +35,12 @@ back on the relative columns, so a client still receives absolute joint targets.
 ``camera_set`` selects the observation:
 
 * ``"stereo_stack"`` (default) -- left over right, full width: ``[T, C, 2H + stereo_gap, W]``;
-* ``"left"`` -- the left camera alone: ``[T, C, H, W]``.
+* ``"left"`` -- the left camera alone: ``[T, C, H, W]``;
+* ``"ego_wrists"`` -- one 320x256 canvas (the 256 tier's 4:3 size): the left head camera on top at
+  320x160, the left and right wrist cameras below at 160x90 each, centred in 96-row slots. Every view
+  edge falls on the 32-pixel grid of one latent token (16x VAE, 2x2 patches), so no token mixes two
+  views, and the canvas is never resized or padded afterwards. Frames are area-downscaled into their
+  slots (``compose_ego_wrists``); store them at 320x180 so nothing is upscaled.
 
 ``stereo_gap`` puts that many black rows between the two cameras of the stack (default 0, no
 band). Two 256x144 cameras stack to 256x288, whose H/W of 1.125 is exactly halfway between the
@@ -57,6 +62,7 @@ from typing import Any, Literal
 import numpy as np
 import pyarrow.parquet as pq
 import torch
+import torch.nn.functional as F
 import torchvision.transforms.v2 as T
 
 from cosmos_framework.data.generator.action.datasets.cosmos3_action_lerobot import (
@@ -86,11 +92,15 @@ JOINT_BLOCKS: tuple[tuple[int, str, str], ...] = (
 
 _ACTION_FEATURE = "action"
 _STATE_FEATURE = "observation.state"
-_IMAGE_FEATURES = {
+IMAGE_FEATURES = {
     "left": "observation.images.camera_ego_left",
     "right": "observation.images.camera_ego_right",
+    "wrist_left": "observation.images.camera_wrist_left",
+    "wrist_right": "observation.images.camera_wrist_right",
 }
-_CAMERA_SETS = ("stereo_stack", "left")
+_CAMERA_SETS = ("stereo_stack", "left", "ego_wrists")
+# The views each camera set reads, in the order the canvas is built from them.
+CAMERA_VIEWS = {"stereo_stack": ("left", "right"), "left": ("left",), "ego_wrists": ("left", "wrist_left", "wrist_right")}
 # The JSON prompt's framing text per camera set; the policy server sends the same words.
 VIEW_DESCRIPTIONS = {
     "stereo_stack": (
@@ -98,6 +108,10 @@ VIEW_DESCRIPTIONS = {
         "stereo pair mounted on the robot's head."
     ),
     "left": "The view is the left camera of a stereo pair mounted on the robot's head.",
+    "ego_wrists": (
+        "The top of the image is the left camera of a stereo pair mounted on the robot's head; below it, "
+        "the left half is the camera on the robot's left wrist and the right half the camera on its right wrist."
+    ),
 }
 # A joint whose pooled q01..q99 half-range is below this would be scaled by ~1/0 under quantile
 # normalization; refuse rather than train on exploding values.
@@ -116,6 +130,30 @@ def stack_stereo(left: torch.Tensor, right: torch.Tensor, gap: int = 0) -> torch
         return torch.cat([left, right], dim=-2)
     band = left.new_zeros((*left.shape[:-2], gap, left.shape[-1]))
     return torch.cat([left, band, right], dim=-2)
+
+
+EGO_WRISTS_CANVAS_HW = (256, 320)
+_EGO_HW, _WRIST_HW, _WRIST_SLOT_TOP = (160, 320), (90, 160), 163  # wrist slots: rows 160..256, 3 black rows each side
+EGO_WRISTS_PAD_ROWS = [160, 161, 162, 253, 254, 255]
+
+
+def compose_ego_wrists(ego: torch.Tensor, wrist_left: torch.Tensor, wrist_right: torch.Tensor) -> torch.Tensor:
+    """The ``"ego_wrists"`` canvas, ``[..., C, 256, 320]``, from three ``[..., C, H, W]`` frames of either dtype.
+
+    Each view is area-resized into its slot (the head camera squashed to 320x160, the wrists to 160x90)
+    and the rest of the canvas is black. Training and the policy server both call this.
+    """
+    def fit(x: torch.Tensor, hw: tuple[int, int]) -> torch.Tensor:
+        flat = x.reshape(-1, *x.shape[-3:]).float()
+        out = F.interpolate(flat, size=hw, mode="area").reshape(*x.shape[:-2], *hw)
+        return out.round().clamp(0, 255).to(x.dtype) if x.dtype == torch.uint8 else out.to(x.dtype)
+
+    canvas = ego.new_zeros((*ego.shape[:-2], *EGO_WRISTS_CANVAS_HW))
+    canvas[..., : _EGO_HW[0], :] = fit(ego, _EGO_HW)
+    rows = slice(_WRIST_SLOT_TOP, _WRIST_SLOT_TOP + _WRIST_HW[0])
+    canvas[..., rows, : _WRIST_HW[1]] = fit(wrist_left, _WRIST_HW)
+    canvas[..., rows, _WRIST_HW[1] :] = fit(wrist_right, _WRIST_HW)
+    return canvas
 
 
 def find_dataset_node(config: dict) -> dict:
@@ -347,9 +385,10 @@ def build_policy_contract(
         info = json.loads((Path(root) / "meta" / "info.json").read_text())
         features = info["features"]
         shard_names = list(features[_ACTION_FEATURE]["names"])
-        shard_hw = [int(v) for v in features[_IMAGE_FEATURES["left"]]["shape"][1:]]
-        if features[_IMAGE_FEATURES["right"]]["shape"][1:] != shard_hw:
-            raise ValueError(f"{root!r}: left and right camera frames differ in size")
+        shard_hw = [int(v) for v in features[IMAGE_FEATURES["left"]]["shape"][1:]]
+        # The server decodes every camera at one frame size: all recorded cameras must share it.
+        if any(features[f]["shape"][1:] != shard_hw for f in IMAGE_FEATURES.values() if f in features):
+            raise ValueError(f"{root!r}: camera frames differ in size")
         if names is None:
             names, frame_hw, fps = shard_names, shard_hw, float(info["fps"])
         elif (shard_names, shard_hw, float(info["fps"])) != (names, frame_hw, fps):
@@ -484,9 +523,8 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         self._delta_timestamps: dict[str, list[float]] = {_ACTION_FEATURE: action_ts}
         if self._use_state:
             self._delta_timestamps[_STATE_FEATURE] = observation_ts
-        self._delta_timestamps[_IMAGE_FEATURES["left"]] = observation_ts
-        if self._camera_set == "stereo_stack":
-            self._delta_timestamps[_IMAGE_FEATURES["right"]] = observation_ts
+        for view in CAMERA_VIEWS[self._camera_set]:
+            self._delta_timestamps[IMAGE_FEATURES[view]] = observation_ts
 
         self._register_sources()
 
@@ -545,14 +583,21 @@ class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
         return stats
 
     def _compose_video(self, sample: dict[str, Any]) -> torch.Tensor:
-        left = sample[_IMAGE_FEATURES["left"]]  # [T,C,H,W]
-        if self._camera_set == "left":
-            return self._color_jitter(left) if self._color_jitter else left
-        right = sample[_IMAGE_FEATURES["right"]]  # [T,C,H,W]
+        views = [sample[IMAGE_FEATURES[v]] for v in CAMERA_VIEWS[self._camera_set]]  # each [T,C,H,W]
+        if self._camera_set == "ego_wrists":
+            # Jitter the finished canvas (half the pixels of the three 320x180 views, as DROID's
+            # jitter_after_compose does), then black out the wrist slots' padding rows again.
+            canvas = compose_ego_wrists(*views)  # [T,C,256,320]
+            if self._color_jitter:
+                canvas = self._color_jitter(canvas)
+                canvas[..., EGO_WRISTS_PAD_ROWS, :] = 0
+            return canvas
         if self._color_jitter:
-            # Before stacking, so the black band between the cameras stays black.
-            left, right = self._color_jitter(torch.cat([left, right])).chunk(2)
-        return stack_stereo(left, right, self._stereo_gap)  # [T,C,2H+gap,W]
+            # One draw for every frame of every camera, before stacking, so the band stays black.
+            views = list(self._color_jitter(torch.cat(views)).chunk(len(views)))
+        if self._camera_set == "left":
+            return views[0]
+        return stack_stereo(*views, self._stereo_gap)  # [T,C,2H+gap,W]
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         mode, _, _, sample = self._fetch_sample(idx)
