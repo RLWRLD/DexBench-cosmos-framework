@@ -2,10 +2,10 @@
 
 `cosmos_framework.scripts.action_policy_server_dexbench` serves a checkpoint of the
 `action_policy_dexbench_rby1_wuji2_nano` recipe ([post-training](./action_policy_dexbench_rby1_wuji2_posttrain.md))
-over HTTP on one GPU. A request carries the left and right head-camera frames, the 62 measured
+over HTTP on one GPU. A request carries the camera frames the run trained on (for `ego_wrists`, the left head camera and both wrist cameras), the 62 measured
 joint positions and the prompt; the reply is the next 32 absolute joint targets. Each request goes
 through the training `ActionTransformPipeline` with the dataset settings read from the run's
-`config.yaml`, so the stacked frame, the JSON prompt and the normalized state row are built by the
+`config.yaml`, so the composed frame, the JSON prompt and the normalized state row are built by the
 same code that built them in training.
 
 <!--TOC-->
@@ -90,20 +90,22 @@ the server peaks at about 32 GiB of GPU memory.
 
 All JSON:
 
-- `GET /info`: the joint names, frame size (`frame_hw`), `stereo_gap`, rate, horizon, prompts,
+- `GET /info`: the joint names, frame size (`frame_hw`), the image keys a request carries (`camera_set`; the run's
+  layout is `camera_layout`), `stereo_gap`, rate, horizon, prompts,
   sampling settings and `action_representation`, for a client to bind joints by name, resize its
   frames and refuse a checkpoint trained with another representation. `action_representation` is
   `{"type": "absolute"}`, or `{"type": "relative_joints", "relative_joint_slices": [[0, 14]], ...}`
   for a run trained with arm-relative actions; `action` is absolute joint targets either way.
 - `POST /predict`:
-  `{"images": {"left": <b64 PNG>, "right": <b64 PNG>}, "state": [62 floats], "prompt": str, "seed": int (optional)}`
+  `{"images": {<camera>: <b64 PNG>, ...}, "state": [62 floats], "prompt": str, "seed": int (optional)}`
   → `{"action": [[62 floats] × 32], "state_echo_error": float, "seed": int, "ms_infer": float, ...}`.
-  The PNGs must be RGB at the contract's `frame_hw` (`144×256`), area-downscaled from the render as
-  in the dataset. `state_echo_error` is the largest difference (rad) between the input state and
+  The keys are `/info`'s `camera_set` (`camera_ego_left`, `camera_wrist_left`, `camera_wrist_right` for
+  `ego_wrists`; `left`, `right` for `stereo_stack`). The PNGs must be RGB at the contract's `frame_hw` (`180×320`
+  for 320×180 recordings), area-downscaled from the render as in the dataset. `state_echo_error` is the largest difference (rad) between the input state and
   the model's denormalized conditioning row, which should come back unchanged.
 
 ## Simulation Client
 
 DexBench-Arena's `dexbench_arena.policy.cosmos3_joint_policy.Cosmos3JointPolicy` is a client for
-this server: it reads `/info`, area-resizes the robot's head-camera renders to `frame_hw`, sends the
+this server: it reads `/info`, area-resizes the robot's camera renders to `frame_hw`, sends the
 joint state in contract order and executes a configurable prefix of each 32-step chunk.

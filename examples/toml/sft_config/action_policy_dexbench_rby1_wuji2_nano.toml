@@ -9,7 +9,7 @@
 # the LIBERO recipe; none of these numbers is tuned for this data.
 #
 # Env required:
-#   DEXBENCH_COSMOS3_DATASET=<LeRobot v3.0 root, 62-D, 256x144 stereo>
+#   DEXBENCH_COSMOS3_DATASET=<LeRobot v3.0 root, 62-D, head and wrist cameras at 320x180>
 #   BASE_CHECKPOINT_PATH=<Cosmos3-Nano DCP dir>
 #   WAN_VAE_PATH=<Wan2.2_VAE.pth>
 #   IMAGINAIRE_OUTPUT_ROOT=<output root>

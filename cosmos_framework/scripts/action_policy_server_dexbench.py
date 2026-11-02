@@ -4,8 +4,8 @@
 """HTTP policy server for the DexBench RBY1-M + Wuji 2 Cosmos3 action policy.
 
 Serves a checkpoint of ``action_policy_dexbench_rby1_wuji2_nano``: 62 absolute joint targets per
-step, the current joint state as the clean conditioning row, the head stereo pair stacked left
-over right. Every request goes through the training-time ``ActionTransformPipeline`` with the
+step, the current joint state as the clean conditioning row, the cameras composed as the run's
+``camera_set`` composed them (the left head camera over both wrist cameras for ``ego_wrists``). Every request goes through the training-time ``ActionTransformPipeline`` with the
 dataset settings read from the checkpoint's own config, so the padded frame, the JSON prompt and
 the normalized state row are built by the same code that built them in training; only the
 diffusion start (frames 1.. and action rows 1.. are generated) differs.
@@ -24,8 +24,8 @@ Endpoints (JSON; with ``--api-token-file`` every request needs ``Authorization: 
 
 - ``GET /info``: contract, sampling settings, checkpoint and ``action_representation``.
 - ``POST /predict``:
-  ``{"images": {"left": <b64 PNG>, "right": <b64 PNG>}, "state": [62 floats], "prompt": str,
-  "seed": int (optional)}`` ->
+  ``{"images": {<camera>: <b64 PNG>, ...}, "state": [62 floats], "prompt": str,
+  "seed": int (optional)}`` -> (cameras as ``/info``'s ``camera_set`` lists them)
   ``{"action": [[62 floats] x chunk], "state_echo_error": float, "seed": int, "ms_infer": float}``.
   ``state_echo_error`` is the max abs difference (rad) between the input state and the model's
   denormalized row 0, which is the clean conditioning row and should come back unchanged.

@@ -46,7 +46,7 @@ The runnable artifacts (TOML recipe, paired launch shell) live in [`examples/`](
 
 This package ships the training stack — the registered `action_policy_dexbench_rby1_wuji2_nano`
 experiment, the `DexBenchRby1Wuji2LeRobotDataset` dataset class with the recipe knobs
-(`use_state`, `stereo_stack`, `stereo_gap`) and the `dexbench_rby1_wuji2` domain. Two inputs are
+(`use_state`, `camera_set`, `stereo_gap`) and the `dexbench_rby1_wuji2` domain. Two inputs are
 external and must be provided per environment:
 
 1. **DexBench dataset (in LeRobotDataset v3.0 format)** — a local LeRobot v3.0 directory (`meta/info.json`,
@@ -76,7 +76,7 @@ external and must be provided per environment:
 | global batch | `256` = `max_samples_per_batch` 16 × 8 ranks × `grad_accum_iter` 2                                                           |
 | iterations   | `4000`, saved every 1000                                                                                                     |
 
-Without the band, two `256×144` cameras stack to `256×288`, exactly halfway between the tier's
+For `stereo_stack`: without the band, two `256×144` cameras stack to `256×288`, exactly halfway between the tier's
 1:1 and 3:4 canvases; `find_closest_target_size` keeps 1:1 and would shrink the stack to `228×256`.
 
 ## Full Reproduction
@@ -127,7 +127,7 @@ with it (`action_stats_path`), so the trainer and the policy server normalize wi
 
 The recipe TOML ([`action_policy_dexbench_rby1_wuji2_nano.toml`](../examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml)) sets the scalar
 knobs (`max_iter`, `save_iter`, `grad_accum_iter`, parallelism, wandb); the dataset/action knobs
-(62-D joints, `use_state`, stereo stack and band, 256 tier, chunk 32) live in the registered
+(62-D joints, `use_state`, the `ego_wrists` canvas, 256 tier, chunk 32) live in the registered
 `action_policy_dexbench_rby1_wuji2_nano` experiment. W&B logging is off (`wandb_mode = "disabled"`, as in upstream's
 recipes); to turn it on, export `WANDB_API_KEY` and add `job.wandb_mode=online` to `EXTRA_TAIL_OVERRIDES`. The run
 then logs to project `cosmos3_action_dexbench`, under `WANDB_ENTITY` when it is set. On 8× H100 an iteration takes 4.3 s; the 4000 iterations

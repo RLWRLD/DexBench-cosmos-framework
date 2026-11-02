@@ -9,8 +9,9 @@ Reads the DexBench 62-joint training contract from local LeRobot v3.0 roots:
   ``left_arm(7), right_arm(7), head(2), hands(40), torso(6)`` (``meta/modality.json``; the hand
   block is DexBench's stage-major interleave of both Wuji 2 hands). ``action`` is the commanded
   joint target, ``observation.state`` the measured position at the same frame;
-* ``observation.images.camera_ego_{left,right}`` are the head-mounted ZED Mini stereo pair,
-  area-downscaled from the render to 256x144;
+* ``observation.images.camera_ego_{left,right}`` are the head-mounted ZED Mini stereo pair and
+  ``observation.images.camera_wrist_{left,right}`` the wrist cameras, area-downscaled from the render to
+  320x180 (``"ego_wrists"`` reads the left head camera and both wrists; ``"stereo_stack"`` expects 256x144);
 * the data is recorded at 30 Hz and is read at its native rate. ``fps`` must equal the dataset's
   rate: ``build_episode_spans`` trims ``chunk_length`` raw rows per episode regardless of the
   delta-timestamp spacing, so reading 30 Hz data at 15 Hz would run windows past episode ends.
@@ -433,7 +434,7 @@ def build_policy_contract(
 
 
 class DexBenchRby1Wuji2LeRobotDataset(BaseActionLeRobotDataset):
-    """RBY1-M + Wuji 2 bimanual dexterous dataset: 62-D absolute joint actions, stereo head cameras."""
+    """RBY1-M + Wuji 2 bimanual dexterous dataset: 62-D absolute joint actions, head and wrist cameras."""
 
     def __init__(
         self,
