@@ -9,7 +9,10 @@
 # registered `action_policy_dexbench_rby1_wuji2_nano` experiment; 256 tier, 62-D absolute joints
 # + use_state, head and wrist cameras). See docs/action_policy_dexbench_rby1_wuji2_posttrain.md.
 #
-# Env vars (override for your filesystem):
+# Settings for this machine and you (HF_TOKEN, HF_HOME, WAN_VAE_PATH, WANDB_API_KEY) are read from
+# examples/dexbench.env: copy examples/dexbench.env.example and fill it in. A variable set in the shell wins.
+#
+# Per run, set on the command line:
 #   DEXBENCH_COSMOS3_DATASET  LeRobot v3.0 root(s) (62-D joints; 320x180 cameras for ego_wrists, 256x144
 #                             for stereo_stack), space-separated, no default
 #   DEXBENCH_CAMERA_SET       ego_wrists (default): left head camera over both wrist cameras;
@@ -23,9 +26,7 @@
 #                             written from the roots before training; training normalizes with it
 #                             (action_stats_path) and the policy server reads it (--contract-path)
 #   BASE_CHECKPOINT_PATH      DCP of nvidia/Cosmos3-Nano (default examples/checkpoints/Cosmos3-Nano)
-#   WAN_VAE_PATH              Wan2.2 VAE .pth (default examples/checkpoints/wan22_vae/Wan2.2_VAE.pth)
 #   OUTPUT_ROOT               default outputs/train
-#   WANDB_API_KEY             for online logging (TOML wandb_mode="online")
 #   NPROC_PER_NODE            torchrun --nproc_per_node (default 8)
 #   EXTRA_TAIL_OVERRIDES      space-separated Hydra overrides
 #
@@ -34,6 +35,8 @@
 #                                trainer.grad_accum_iter=1 dataloader_train.max_samples_per_batch=4"
 #   bash examples/launch_sft_action_policy_dexbench_rby1_wuji2_nano.sh
 # ============================================================================
+
+source "$(dirname "${BASH_SOURCE[0]}")/_dexbench_env.sh"
 
 TOML_FILE="examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml"
 : "${BASE_CHECKPOINT_PATH:=examples/checkpoints/Cosmos3-Nano}"

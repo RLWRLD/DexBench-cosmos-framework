@@ -86,7 +86,7 @@ hf download Wan-AI/Wan2.2-TI2V-5B Wan2.2_VAE.pth \
 export DEXBENCH_COSMOS3_DATASET=/path/to/dexbench_62d_320x180_4cam_lerobotv30
 # export DEXBENCH_CAMERA_SET=stereo_stack  # the head stereo pair instead, on 256x144 data
 export BASE_CHECKPOINT_PATH=/path/to/base_checkpoint
-export WAN_VAE_PATH=/path/to/wan22_vae/Wan2.2_VAE.pth
+export WAN_VAE_PATH=/path/to/wan22_vae/Wan2.2_VAE.pth   # or once per machine in examples/dexbench.env
 export OUTPUT_ROOT=/path/to/outputs
 export NPROC_PER_NODE=8
 export EXTRA_TAIL_OVERRIDES="job.name=<run-name>"

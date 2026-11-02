@@ -46,6 +46,25 @@ checks requests against.
 
 ## Policy Server
 
+On any machine with the environment installed (`uv sync`), one command serves a run:
+
+```shell
+cp examples/dexbench.env.example examples/dexbench.env   # once per machine: HF_TOKEN, HF_HOME
+bash examples/serve_action_policy_dexbench_rby1_wuji2_nano.sh <run dir> --port 8000 --api-token-file /path/to/token
+```
+
+`<run dir>` is the training run's job dir (its latest `checkpoints/iter_*` is served), one `iter_<N>` of it, or a
+copy holding `model/`, `config.yaml` and `policy_contract.json`. Nothing of the training machine is needed:
+
+- The run's `config.yaml` names the VAE by the path the training machine read it from (`WAN_VAE_PATH`). Where that
+  file does not exist, the server uses the model's default name for the same VAE, which the checkpoint registry
+  resolves to the file pinned on the Hub; it downloads into the Hub cache once and is reused.
+- Without a CUDA toolkit on the machine, Transformer Engine is pointed at the CUDA libraries the environment
+  installed (`init_script`).
+- On a machine with no network, set `HF_HUB_OFFLINE=1` after the models are in the Hub cache.
+
+The launcher runs:
+
 ```shell
 python -m cosmos_framework.scripts.action_policy_server_dexbench \
   --checkpoint-path /path/to/export \
