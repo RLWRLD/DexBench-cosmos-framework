@@ -89,7 +89,10 @@ your shell and do not. Export its settings there first, or Cosmos3-Nano (tens of
 # Step 0: export HF_TOKEN, HF_HOME, WAN_VAE_PATH and WANDB_API_KEY from examples/dexbench.env into this shell
 source examples/_dexbench_env.sh
 
-# Step 1: convert the base checkpoint -> $BASE_CHECKPOINT_PATH
+# Step 1: convert the base checkpoint -> $BASE_CHECKPOINT_PATH. `Cosmos3-Nano` resolves to nvidia/Cosmos3-Nano at
+# the Hub's `main`; the recipe was run at revision e59a53c25979a090fa8706c9acc0c254a6e89b92. If `main` has moved,
+# download that revision (hf download nvidia/Cosmos3-Nano --revision <sha> --local-dir ...) and pass the directory
+# as --checkpoint-path.
 python -m cosmos_framework.scripts.convert_model_to_dcp \
   --checkpoint-path Cosmos3-Nano \
   -o $BASE_CHECKPOINT_PATH
