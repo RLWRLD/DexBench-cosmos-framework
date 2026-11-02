@@ -6,6 +6,14 @@ Two external inputs are required: (1) a DexBench dataset in LeRobotDataset v3.0 
 
 The recipe runs on one node with 8 GPUs (FSDP).
 
+The recipe is part of [RLWRLD/DexBench-cosmos-framework](https://github.com/RLWRLD/DexBench-cosmos-framework), a fork of
+NVIDIA/cosmos-framework, on branch `dexbench-ego-wrists` (the fork's `main` carries an earlier version of the recipe; upstream
+has none of it):
+
+```shell
+git clone -b dexbench-ego-wrists https://github.com/RLWRLD/DexBench-cosmos-framework.git
+```
+
 <!--TOC-->
 
 ______________________________________________________________________
@@ -24,7 +32,7 @@ ______________________________________________________________________
 
 ## Prerequisites
 
-- [Setup](../README.md#setup) — clone the repo, install the training extras (`uv sync --all-extras --group=cu128-train` was used for this recipe), and activate the environment.
+- [Setup](../README.md#setup) — clone the fork as above (not the upstream repository [Setup](./setup.md) names), install the training extras (`uv sync --all-extras --group=cu128-train` was used for this recipe), and activate the environment.
 - [Environment Variables](./environment_variables.md) — set environment variables.
 - [FAQ](./faq.md) — troubleshooting (OOM during SFT, defaults) and common pitfalls.
 
