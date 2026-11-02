@@ -106,6 +106,6 @@ All JSON:
 
 ## Simulation Client
 
-DexBench-Arena's `dexbench_arena.policy.cosmos3_joint_policy.Cosmos3JointPolicy` is a client for
-this server: it reads `/info`, area-resizes the robot's camera renders to `frame_hw`, sends the
-joint state in contract order and executes a configurable prefix of each 32-step chunk.
+The DexBench simulator's policy client talks to this server: it reads `/info`, area-resizes the
+robot's camera renders to `frame_hw`, sends the joint state in contract order and executes a
+configurable prefix of each 32-step chunk.

@@ -323,7 +323,7 @@ def representation(slices: JointSlices) -> dict[str, Any]:
 def representation_mismatch(stated: dict[str, Any] | None, slices: JointSlices) -> str | None:
     """Why a contract stating ``stated`` does not fit a run of ``relative_joint_slices=slices``, or None.
 
-    Compares ``type`` and the relative slices only, as DexBench-Arena's ``representation_mismatch`` does,
+    Compares ``type`` and the relative slices only, as the simulator's policy client does,
     so rewording the descriptive fields keeps existing contracts valid. No ``representation`` is absolute.
     """
     stated = stated or {"type": "absolute"}
