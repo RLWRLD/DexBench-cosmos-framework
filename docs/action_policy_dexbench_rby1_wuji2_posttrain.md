@@ -6,6 +6,14 @@ Two external inputs are required: (1) a DexBench dataset in LeRobotDataset v3.0 
 
 The recipe runs on one node with 8 GPUs (FSDP).
 
+The recipe is part of [RLWRLD/DexBench-cosmos-framework](https://github.com/RLWRLD/DexBench-cosmos-framework), a fork of
+NVIDIA/cosmos-framework, on branch `dexbench-ego-wrists` (the fork's `main` carries an earlier version of the recipe; upstream
+has none of it):
+
+```shell
+git clone -b dexbench-ego-wrists https://github.com/RLWRLD/DexBench-cosmos-framework.git
+```
+
 <!--TOC-->
 
 ______________________________________________________________________
@@ -24,7 +32,11 @@ ______________________________________________________________________
 
 ## Prerequisites
 
-- [Setup](../README.md#setup) — clone the repo, install the training extras (`uv sync --all-extras --group=cu128-train` was used for this recipe), and activate the environment.
+- [Setup](../README.md#setup) — clone the fork as above (not the upstream repository [Setup](./setup.md) names), install the training extras, and activate the environment. The recipe was run with
+  `uv sync --all-extras --group=cu128-train` (not the README's recommended `cu130-train`); its CUDA 12.8 wheels need
+  an NVIDIA driver R570 or newer. When no toolkit is configured (no `CUDA_HOME`, `CUDA_PATH` or `/usr/local/cuda`),
+  the framework's init points Transformer Engine at the NVRTC, cuRAND and cuDNN libraries the CUDA wheels installed
+  (`NVRTC_HOME`, `CURAND_HOME`, `CUDNN_HOME`, `NVTE_CUDA_INCLUDE_DIR`; a variable you set wins).
 - [Environment Variables](./environment_variables.md) — set environment variables.
 - [FAQ](./faq.md) — troubleshooting (OOM during SFT, defaults) and common pitfalls.
 
@@ -34,17 +46,15 @@ The runnable artifacts (TOML recipe, paired launch shell) live in [`examples/`](
 
 This package ships the training stack — the registered `action_policy_dexbench_rby1_wuji2_nano`
 experiment, the `DexBenchRby1Wuji2LeRobotDataset` dataset class with the recipe knobs
-(`use_state`, `stereo_stack`, `stereo_gap`) and the `dexbench_rby1_wuji2` domain. Two inputs are
+(`use_state`, `camera_set`, `stereo_gap`) and the `dexbench_rby1_wuji2` domain. Two inputs are
 external and must be provided per environment:
 
-1. **DexBench dataset (in LeRobotDataset v3.0 format)** — one or more roots with `action` and
-   `observation.state` as the 62 joint positions in the order
-   `left_arm(7), right_arm(7), head(2), hands(40), torso(6)`, the head stereo pair as
-   `observation.images.camera_ego_left` / `camera_ego_right` at `256×144`, recorded at 30 Hz. The
-   DexBench-Arena repository produces it from a 66-joint RRC LeRobot v2.1 export with
-   `scripts/training/relayout_lerobot_62d_320x180.py --size 256x144` (joints selected by name,
-   frames area-downscaled) and `scripts/training/convert_lerobot_v21_to_v30.py`. Point
-   `DEXBENCH_COSMOS3_DATASET` at the v3.0 root, or at several roots separated by spaces.
+1. **DexBench dataset (in LeRobotDataset v3.0 format)** — a local LeRobot v3.0 directory (`meta/info.json`,
+   `meta/tasks.parquet`, data and videos) with `action` and `observation.state` as the 62 joint positions in the
+   order `left_arm(7), right_arm(7), head(2), hands(40), torso(6)`, and the cameras
+   `observation.images.camera_ego_left`, `camera_wrist_left` and `camera_wrist_right` (the ones `ego_wrists` reads;
+   `stereo_stack` reads `camera_ego_left` / `camera_ego_right`), all at one size, `320×180`, recorded at 30 Hz.
+   Point `DEXBENCH_COSMOS3_DATASET` at the directory, or at several separated by spaces.
 2. **DCP base checkpoint** — convert [Cosmos3-Nano](https://huggingface.co/nvidia/Cosmos3-Nano) to DCP and point
    `BASE_CHECKPOINT_PATH` at it (see [Full Reproduction](#full-reproduction)). Action heads are
    not loaded from it (they init fresh).
@@ -66,16 +76,27 @@ external and must be provided per environment:
 | global batch | `256` = `max_samples_per_batch` 16 × 8 ranks × `grad_accum_iter` 2                                                           |
 | iterations   | `4000`, saved every 1000                                                                                                     |
 
-Without the band, two `256×144` cameras stack to `256×288`, exactly halfway between the tier's
+For `stereo_stack`: without the band, two `256×144` cameras stack to `256×288`, exactly halfway between the tier's
 1:1 and 3:4 canvases; `find_closest_target_size` keeps 1:1 and would shrink the stack to `228×256`.
 
 ## Full Reproduction
 
+The launchers read `examples/dexbench.env` (copy `examples/dexbench.env.example` and fill it in); Steps 1–2 run in
+your shell and do not. Export its settings there first, or Cosmos3-Nano (tens of GB) downloads into
+`~/.cache/huggingface` instead of your `HF_HOME`:
+
 ```shell
-# Step 1: convert the base checkpoint -> $BASE_CHECKPOINT_PATH
+# Step 0: export HF_TOKEN, HF_HOME, WAN_VAE_PATH and WANDB_API_KEY from examples/dexbench.env into this shell
+source examples/_dexbench_env.sh
+
+# Step 1: convert the base checkpoint -> $BASE_CHECKPOINT_PATH. `Cosmos3-Nano` resolves to nvidia/Cosmos3-Nano at
+# the Hub's `main`; the recipe was run at revision e59a53c25979a090fa8706c9acc0c254a6e89b92. If `main` has moved,
+# download that revision (hf download nvidia/Cosmos3-Nano --revision <sha> --local-dir ...) and pass the directory
+# as --checkpoint-path.
 python -m cosmos_framework.scripts.convert_model_to_dcp \
   --checkpoint-path Cosmos3-Nano \
   -o $BASE_CHECKPOINT_PATH
+# It writes straight into -o: after an interrupted run, rm -rf $BASE_CHECKPOINT_PATH before running it again.
 
 # Step 2: download the Wan2.2 VAE at the revision cosmos_framework/inference/common/checkpoints.py pins
 hf download Wan-AI/Wan2.2-TI2V-5B Wan2.2_VAE.pth \
@@ -83,7 +104,7 @@ hf download Wan-AI/Wan2.2-TI2V-5B Wan2.2_VAE.pth \
 
 # Step 3: launch. The TOML selects the experiment + scalars; the dataset/action
 # knobs come from the registered experiment.
-export DEXBENCH_COSMOS3_DATASET=/path/to/dexbench_62d_320x180_4cam_lerobotv30
+export DEXBENCH_COSMOS3_DATASET=/path/to/your/dexbench_lerobot_v30   # local LeRobot v3.0 dir, see Inputs You Provide
 # export DEXBENCH_CAMERA_SET=stereo_stack  # the head stereo pair instead, on 256x144 data
 export BASE_CHECKPOINT_PATH=/path/to/base_checkpoint
 export WAN_VAE_PATH=/path/to/wan22_vae/Wan2.2_VAE.pth   # or once per machine in examples/dexbench.env
@@ -110,16 +131,19 @@ with it (`action_stats_path`), so the trainer and the policy server normalize wi
 
 The recipe TOML ([`action_policy_dexbench_rby1_wuji2_nano.toml`](../examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml)) sets the scalar
 knobs (`max_iter`, `save_iter`, `grad_accum_iter`, parallelism, wandb); the dataset/action knobs
-(62-D joints, `use_state`, stereo stack and band, 256 tier, chunk 32) live in the registered
-`action_policy_dexbench_rby1_wuji2_nano` experiment. W&B logs to project `cosmos3_action_dexbench`
-under `WANDB_ENTITY` when it is set. On 8× H100 an iteration takes 4.3 s; the 4000 iterations
+(62-D joints, `use_state`, the `ego_wrists` canvas, 256 tier, chunk 32) live in the registered
+`action_policy_dexbench_rby1_wuji2_nano` experiment. W&B logging is off (`wandb_mode = "disabled"`, as in upstream's
+recipes); to turn it on, export `WANDB_API_KEY` and add `job.wandb_mode=online` to `EXTRA_TAIL_OVERRIDES`. The run
+then logs to project `cosmos3_action_dexbench`, under `WANDB_ENTITY` when it is set. On 8× H100 an iteration takes 4.3 s; the 4000 iterations
 with four saves took 5 h 16 min.
 
 ## Checkpoints
 
 - Saved every `save_iter` iters (1000) to
   `$OUTPUT_ROOT/cosmos3_action_dexbench/action_sft/<job.name>/checkpoints/iter_<N>/`, next to the
-  run's `config.yaml`; one save (model + optimizer) is about 166 GB.
+  run's `config.yaml`; one save (model + optimizer) is about 166 GB (114 GB model, 53 GB optimizer). A short smoke run
+  (the overrides in the launcher's header, with `trainer.logging_iter=5` so its 20 iterations print the loss) saves
+  the same 166 GB at its last iteration.
 - Export to HF safetensors (EMA weights, about 30 GB) via `cosmos_framework.scripts.export_model`:
 
   ```shell

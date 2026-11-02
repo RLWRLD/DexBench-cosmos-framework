@@ -1,8 +1,12 @@
 > **DexBench-cosmos-framework**: [NVIDIA/cosmos-framework](https://github.com/NVIDIA/cosmos-framework) at its
 > 2026-10-10 release (`a36f6b0`) plus a Cosmos3-Nano action-policy post-training recipe and HTTP policy server
-> for the DexBench RBY1-M + Wuji 2 embodiment (62 joints, head stereo pair): see
+> for the DexBench RBY1-M + Wuji 2 embodiment (62 joints, head and wrist cameras): see
 > [docs/action_policy_dexbench_rby1_wuji2_posttrain.md](docs/action_policy_dexbench_rby1_wuji2_posttrain.md) and
 > [docs/action_policy_dexbench_rby1_wuji2_server.md](docs/action_policy_dexbench_rby1_wuji2_server.md).
+> The recipe lives on branch `dexbench-ego-wrists` of this fork (`main` carries an earlier version of it); upstream
+> NVIDIA/cosmos-framework has none of it, so clone the fork at that branch instead of the repository [Setup](./docs/setup.md#installation) clones:
+> `git clone -b dexbench-ego-wrists https://github.com/RLWRLD/DexBench-cosmos-framework.git`.
+> The recipe was run with `--group=cu128-train` (see the post-training guide's Prerequisites).
 > Everything else below is upstream's README.
 
 <p align="center">

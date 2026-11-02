@@ -164,7 +164,7 @@ action_policy_dexbench_rby1_wuji2_nano = LazyDict(
                     dexbench=dict(
                         ratio=1,
                         dataset=L(get_action_dexbench_rby1_wuji2_sft_dataset)(
-                            # One LeRobot v3.0 root (62-D, 256x144 stereo); see the module docstring
+                            # LeRobot v3.0 root(s) (62-D, head and wrist cameras at 320x180); see the module docstring
                             # of dexbench_rby1_wuji2_lerobot_dataset for how it is produced.
                             root="${oc.env:DEXBENCH_COSMOS3_DATASET}",
                             fps=30,

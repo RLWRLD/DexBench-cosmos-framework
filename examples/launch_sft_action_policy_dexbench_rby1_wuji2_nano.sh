@@ -31,8 +31,9 @@
 #   EXTRA_TAIL_OVERRIDES      space-separated Hydra overrides
 #
 # Single-node smoke (config/data sanity, a few iters):
-#   export EXTRA_TAIL_OVERRIDES="trainer.max_iter=20 checkpoint.save_iter=20 \
+#   export EXTRA_TAIL_OVERRIDES="trainer.max_iter=20 checkpoint.save_iter=20 trainer.logging_iter=5 \
 #                                trainer.grad_accum_iter=1 dataloader_train.max_samples_per_batch=4"
+#   (logging_iter=5: the TOML's 50 prints no loss in 20 iterations. Its one save is still ~166 GB.)
 #   bash examples/launch_sft_action_policy_dexbench_rby1_wuji2_nano.sh
 # ============================================================================
 
