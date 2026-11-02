@@ -41,11 +41,8 @@ Example (DCP checkpoint written by the training run; see docs/action_policy_dexb
 """
 
 from cosmos_framework.inference.common.init import init_script
-from cosmos_framework.inference.common.portable_serving import python_cuda_library_env, registered_vae_override
 
-# Before anything imports Transformer Engine: on a machine with no CUDA toolkit it finds CUDA's libraries in this
-# environment's own packages.
-init_script(default_env=python_cuda_library_env())
+init_script()
 
 import base64
 import binascii
@@ -65,6 +62,7 @@ import torch
 import tyro
 from PIL import Image
 
+from cosmos_framework.configs.base.defaults.tokenizer import PRETRAINED_TOKENIZER_WAN2PT2_VAE_PTH
 from cosmos_framework.data.generator.action.datasets.action_sft_dataset import (
     get_action_dexbench_rby1_wuji2_sft_dataset,
 )
@@ -136,6 +134,25 @@ def _load_config_dict(setup_args: OmniSetupArgs) -> dict:
     if setup_args.config_file_type == ConfigFileType.MODULE:
         return deserialize_config_dict(Path(setup_args.output_dir) / "config.yaml")
     return deserialize_config_dict(Path(setup_args.config_file))
+
+
+def _portable_vae_override(config_file: str) -> list[str]:
+    """The VAE by the model's default name when the checkpoint's config names a local file that is not here.
+
+    A training run reads the Wan2.2 VAE from a local file (``WAN_VAE_PATH``) and its config keeps that path, so on
+    any other machine the file is missing. The model's default name for the same VAE resolves through the
+    checkpoint registry to the file pinned on the Hub, downloaded once into the Hub cache.
+    """
+    path = Path(str(config_file))
+    if path.suffix not in (".yaml", ".yml", ".json") or not path.is_file():
+        return []
+    tokenizer = ((deserialize_config_dict(path).get("model") or {}).get("config") or {}).get("tokenizer") or {}
+    vae_path = tokenizer.get("vae_path")
+    if not isinstance(vae_path, str) or "://" in vae_path or Path(vae_path).exists():
+        return []
+    if Path(vae_path).name != Path(PRETRAINED_TOKENIZER_WAN2PT2_VAE_PTH).name:
+        return []
+    return [f"model.config.tokenizer.vae_path={PRETRAINED_TOKENIZER_WAN2PT2_VAE_PTH}"]
 
 
 def _decode_png(b64: str, expected_hw: tuple[int, int], name: str) -> torch.Tensor:
@@ -313,14 +330,10 @@ class DexBenchPolicyService:
         # run; building them downloads a blocklist from the Hub through `uv`, which an offline eval pod
         # (HF_HUB_OFFLINE, no uv in the image) cannot do. action_policy_server_robolab skips them too.
         overrides.guardrails = False
-        # The checkpoint's config names the VAE by the path its training machine read it from; elsewhere, the same
-        # file pinned on the Hub.
-        config_path = Path(str(overrides.config_file))
-        if config_path.suffix in (".yaml", ".yml", ".json") and config_path.is_file():
-            overrides.experiment_overrides = [
-                *overrides.experiment_overrides,
-                *registered_vae_override(deserialize_config_dict(config_path)),
-            ]
+        overrides.experiment_overrides = [
+            *overrides.experiment_overrides,
+            *_portable_vae_override(overrides.config_file),
+        ]
         setup_args = overrides.build_setup()
         init_output_dir(setup_args.output_dir)
         setup_args = disable_runtime_ema_for_frozen_config(setup_args)

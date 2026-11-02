@@ -7,6 +7,7 @@ import logging
 import os
 import socket
 import sys
+import sysconfig
 import time
 import warnings
 from pathlib import Path
@@ -185,10 +186,34 @@ def _distributed_excepthook(exc_type, value, traceback):
     sys.__excepthook__(exc_type, value, traceback)
 
 
+def _cuda_library_defaults() -> dict[str, str]:
+    """Where Transformer Engine should find CUDA's libraries when the machine has no CUDA toolkit.
+
+    Transformer Engine looks for nvrtc, curand and cudnn under ``<LIB>_HOME``, ``CUDA_HOME``, ``CUDA_PATH`` and
+    ``/usr/local/cuda``. Finding none, it falls back to the PyPI packages and requires cudart under ``nvidia/cudart``
+    or ``nvidia/cuda_cudart``, while the CUDA 12 wheels install ``nvidia/cuda_runtime``, so it stops with "cudart shared
+    object not found". The environment's own wheels hold everything it needs; this points its first search at them.
+    Empty where a toolkit is found.
+    """
+    if os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH") or os.path.isdir("/usr/local/cuda"):
+        return {}
+    nvidia = Path(sysconfig.get_path("purelib")) / "nvidia"
+    found = {
+        "NVRTC_HOME": nvidia / "cuda_nvrtc",
+        "CURAND_HOME": nvidia / "curand",
+        "CUDNN_HOME": nvidia / "cudnn",
+        "NVTE_CUDA_INCLUDE_DIR": nvidia / "cuda_runtime" / "include",
+    }
+    return {name: str(path) for name, path in found.items() if path.is_dir()}
+
+
 def _init_script(training: bool = False, env: dict[str, str] | None = None, default_env: dict[str, str] | None = None):
     """Initialize script."""
     if "imaginaire" in sys.modules:
         raise RuntimeError("'init_script' must be called first.")
+    # Before anything imports Transformer Engine; a variable already set wins.
+    for k, v in _cuda_library_defaults().items():
+        os.environ.setdefault(k, v)
     if default_env:
         for k, v in default_env.items():
             os.environ.setdefault(k, v)
