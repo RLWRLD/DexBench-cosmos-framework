@@ -6,6 +6,7 @@
 > The recipe lives on branch `dexbench-ego-wrists` of this fork (`main` carries an earlier version of it); upstream
 > NVIDIA/cosmos-framework has none of it, so clone the fork at that branch instead of the repository [Setup](./docs/setup.md#installation) clones:
 > `git clone -b dexbench-ego-wrists https://github.com/RLWRLD/DexBench-cosmos-framework.git`.
+> The recipe was run with `--group=cu128-train` (see the post-training guide's Prerequisites).
 > Everything else below is upstream's README.
 
 <p align="center">
