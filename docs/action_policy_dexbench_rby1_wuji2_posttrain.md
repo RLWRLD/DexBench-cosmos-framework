@@ -49,14 +49,12 @@ experiment, the `DexBenchRby1Wuji2LeRobotDataset` dataset class with the recipe 
 (`use_state`, `stereo_stack`, `stereo_gap`) and the `dexbench_rby1_wuji2` domain. Two inputs are
 external and must be provided per environment:
 
-1. **DexBench dataset (in LeRobotDataset v3.0 format)** — one or more roots with `action` and
-   `observation.state` as the 62 joint positions in the order
-   `left_arm(7), right_arm(7), head(2), hands(40), torso(6)`, the head stereo pair as
-   `observation.images.camera_ego_left` / `camera_ego_right` at `256×144`, recorded at 30 Hz. The
-   DexBench-Arena repository produces it from a 66-joint RRC LeRobot v2.1 export with
-   `scripts/training/relayout_lerobot_62d_320x180.py --size 256x144` (joints selected by name,
-   frames area-downscaled) and `scripts/training/convert_lerobot_v21_to_v30.py`. Point
-   `DEXBENCH_COSMOS3_DATASET` at the v3.0 root, or at several roots separated by spaces.
+1. **DexBench dataset (in LeRobotDataset v3.0 format)** — a local LeRobot v3.0 directory (`meta/info.json`,
+   `meta/tasks.parquet`, data and videos) with `action` and `observation.state` as the 62 joint positions in the
+   order `left_arm(7), right_arm(7), head(2), hands(40), torso(6)`, and the cameras
+   `observation.images.camera_ego_left`, `camera_wrist_left` and `camera_wrist_right` (the ones `ego_wrists` reads;
+   `stereo_stack` reads `camera_ego_left` / `camera_ego_right`), all at one size, `320×180`, recorded at 30 Hz.
+   Point `DEXBENCH_COSMOS3_DATASET` at the directory, or at several separated by spaces.
 2. **DCP base checkpoint** — convert [Cosmos3-Nano](https://huggingface.co/nvidia/Cosmos3-Nano) to DCP and point
    `BASE_CHECKPOINT_PATH` at it (see [Full Reproduction](#full-reproduction)). Action heads are
    not loaded from it (they init fresh).
@@ -102,7 +100,7 @@ hf download Wan-AI/Wan2.2-TI2V-5B Wan2.2_VAE.pth \
 
 # Step 3: launch. The TOML selects the experiment + scalars; the dataset/action
 # knobs come from the registered experiment.
-export DEXBENCH_COSMOS3_DATASET=/path/to/dexbench_62d_320x180_4cam_lerobotv30
+export DEXBENCH_COSMOS3_DATASET=/path/to/your/dexbench_lerobot_v30   # local LeRobot v3.0 dir, see Inputs You Provide
 # export DEXBENCH_CAMERA_SET=stereo_stack  # the head stereo pair instead, on 256x144 data
 export BASE_CHECKPOINT_PATH=/path/to/base_checkpoint
 export WAN_VAE_PATH=/path/to/wan22_vae/Wan2.2_VAE.pth   # or once per machine in examples/dexbench.env

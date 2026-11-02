@@ -3,9 +3,7 @@
 
 """DexBench RBY1-M + Wuji 2 hands LeRobot action-policy dataset.
 
-Reads the DexBench 62-joint training contract written by DexBench-Arena's
-``scripts/training/relayout_lerobot_62d_320x180.py`` (``--size 256x144``) and converted to
-LeRobot v3.0 by ``scripts/training/convert_lerobot_v21_to_v30.py``:
+Reads the DexBench 62-joint training contract from local LeRobot v3.0 roots:
 
 * ``action`` and ``observation.state`` are 62 absolute joint positions in radians, in the order
   ``left_arm(7), right_arm(7), head(2), hands(40), torso(6)`` (``meta/modality.json``; the hand
