@@ -36,7 +36,7 @@
 #   bash examples/launch_sft_action_policy_dexbench_rby1_wuji2_nano.sh
 # ============================================================================
 
-source "$(dirname "${BASH_SOURCE[0]}")/_dexbench_env.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_dexbench_env.sh" || exit 1
 
 TOML_FILE="examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml"
 : "${BASE_CHECKPOINT_PATH:=examples/checkpoints/Cosmos3-Nano}"

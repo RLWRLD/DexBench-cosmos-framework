@@ -17,7 +17,7 @@
 # ============================================================================
 set -euo pipefail
 WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source "$WORKDIR/examples/_dexbench_env.sh"
+source "$WORKDIR/examples/_dexbench_env.sh" || exit 1
 
 [[ $# -ge 1 ]] || { sed -n '8,16p' "${BASH_SOURCE[0]}" >&2; exit 2; }
 target="$(cd "$1" && pwd)"; shift
