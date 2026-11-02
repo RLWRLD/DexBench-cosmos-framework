@@ -128,8 +128,9 @@ with it (`action_stats_path`), so the trainer and the policy server normalize wi
 The recipe TOML ([`action_policy_dexbench_rby1_wuji2_nano.toml`](../examples/toml/sft_config/action_policy_dexbench_rby1_wuji2_nano.toml)) sets the scalar
 knobs (`max_iter`, `save_iter`, `grad_accum_iter`, parallelism, wandb); the dataset/action knobs
 (62-D joints, `use_state`, stereo stack and band, 256 tier, chunk 32) live in the registered
-`action_policy_dexbench_rby1_wuji2_nano` experiment. W&B logs to project `cosmos3_action_dexbench`
-under `WANDB_ENTITY` when it is set. On 8× H100 an iteration takes 4.3 s; the 4000 iterations
+`action_policy_dexbench_rby1_wuji2_nano` experiment. W&B logging is off (`wandb_mode = "disabled"`, as in upstream's
+recipes); to turn it on, export `WANDB_API_KEY` and add `job.wandb_mode=online` to `EXTRA_TAIL_OVERRIDES`. The run
+then logs to project `cosmos3_action_dexbench`, under `WANDB_ENTITY` when it is set. On 8× H100 an iteration takes 4.3 s; the 4000 iterations
 with four saves took 5 h 16 min.
 
 ## Checkpoints

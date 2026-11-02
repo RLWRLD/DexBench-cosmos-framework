@@ -20,7 +20,7 @@ experiment   = "action_policy_dexbench_rby1_wuji2_nano"
 project      = "cosmos3_action_dexbench"
 group        = "action_sft"
 name         = "action_policy_dexbench_rby1_wuji2_nano"
-wandb_mode   = "online"
+wandb_mode   = "disabled"  # job.wandb_mode=online + WANDB_API_KEY to log to W&B
 
 [model]
 precision = "bfloat16"
