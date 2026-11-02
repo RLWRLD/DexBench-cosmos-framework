@@ -141,7 +141,9 @@ with four saves took 5 h 16 min.
 
 - Saved every `save_iter` iters (1000) to
   `$OUTPUT_ROOT/cosmos3_action_dexbench/action_sft/<job.name>/checkpoints/iter_<N>/`, next to the
-  run's `config.yaml`; one save (model + optimizer) is about 166 GB.
+  run's `config.yaml`; one save (model + optimizer) is about 166 GB (114 GB model, 53 GB optimizer). A short smoke run
+  (the overrides in the launcher's header, with `trainer.logging_iter=5` so its 20 iterations print the loss) saves
+  the same 166 GB at its last iteration.
 - Export to HF safetensors (EMA weights, about 30 GB) via `cosmos_framework.scripts.export_model`:
 
   ```shell
