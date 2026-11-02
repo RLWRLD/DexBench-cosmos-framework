@@ -96,6 +96,7 @@ source examples/_dexbench_env.sh
 python -m cosmos_framework.scripts.convert_model_to_dcp \
   --checkpoint-path Cosmos3-Nano \
   -o $BASE_CHECKPOINT_PATH
+# It writes straight into -o: after an interrupted run, rm -rf $BASE_CHECKPOINT_PATH before running it again.
 
 # Step 2: download the Wan2.2 VAE at the revision cosmos_framework/inference/common/checkpoints.py pins
 hf download Wan-AI/Wan2.2-TI2V-5B Wan2.2_VAE.pth \
