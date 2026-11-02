@@ -33,8 +33,8 @@ ______________________________________________________________________
 ## Prerequisites
 
 - [Setup](../README.md#setup) — clone the fork as above (not the upstream repository [Setup](./setup.md) names), install the training extras, and activate the environment. The recipe was run with
-  `uv sync --all-extras --group=cu128-train` (not the README's recommended `cu130-train`), on H200s with driver 580 and
-  a CUDA 12.4 toolkit on the system. When no toolkit is configured (no `CUDA_HOME`, `CUDA_PATH` or `/usr/local/cuda`),
+  `uv sync --all-extras --group=cu128-train` (not the README's recommended `cu130-train`); its CUDA 12.8 wheels need
+  an NVIDIA driver R570 or newer. When no toolkit is configured (no `CUDA_HOME`, `CUDA_PATH` or `/usr/local/cuda`),
   the framework's init points Transformer Engine at the NVRTC, cuRAND and cuDNN libraries the CUDA wheels installed
   (`NVRTC_HOME`, `CURAND_HOME`, `CUDNN_HOME`, `NVTE_CUDA_INCLUDE_DIR`; a variable you set wins).
 - [Environment Variables](./environment_variables.md) — set environment variables.
