@@ -41,8 +41,11 @@ Example (DCP checkpoint written by the training run; see docs/action_policy_dexb
 """
 
 from cosmos_framework.inference.common.init import init_script
+from cosmos_framework.inference.common.portable_serving import python_cuda_library_env, registered_vae_override
 
-init_script()
+# Before anything imports Transformer Engine: on a machine with no CUDA toolkit it finds CUDA's libraries in this
+# environment's own packages.
+init_script(default_env=python_cuda_library_env())
 
 import base64
 import binascii
@@ -310,6 +313,14 @@ class DexBenchPolicyService:
         # run; building them downloads a blocklist from the Hub through `uv`, which an offline eval pod
         # (HF_HUB_OFFLINE, no uv in the image) cannot do. action_policy_server_robolab skips them too.
         overrides.guardrails = False
+        # The checkpoint's config names the VAE by the path its training machine read it from; elsewhere, the same
+        # file pinned on the Hub.
+        config_path = Path(str(overrides.config_file))
+        if config_path.suffix in (".yaml", ".yml", ".json") and config_path.is_file():
+            overrides.experiment_overrides = [
+                *overrides.experiment_overrides,
+                *registered_vae_override(deserialize_config_dict(config_path)),
+            ]
         setup_args = overrides.build_setup()
         init_output_dir(setup_args.output_dir)
         setup_args = disable_runtime_ema_for_frozen_config(setup_args)
