@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: OpenMDW-1.1
 
-# Sourced by the DexBench launchers (or by hand: `source examples/_dexbench_env.sh`): exports the settings in examples/dexbench.env (or $DEXBENCH_ENV_FILE), the
-# machine's and the user's (see examples/dexbench.env.example). A variable already set in the shell wins, and an empty
-# value is skipped, so an unfilled line leaves the tool's own default (an empty HF_HOME would not). Values are never
-# printed.
+# Sourced by the DexBench launchers (or by hand: `source examples/_dexbench_env.sh`): exports the settings in
+# examples/dexbench.env (or $DEXBENCH_ENV_FILE), the machine's and the user's (see examples/dexbench.env.example). A
+# variable already set in the shell wins, and an empty value is skipped, so an unfilled line leaves the tool's own
+# default (an empty HF_HOME would not). Values are never printed.
 _dexbench_env_file="${DEXBENCH_ENV_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dexbench.env}"
 if [[ -f "$_dexbench_env_file" ]]; then
     while IFS= read -r _line || [[ -n "$_line" ]]; do
